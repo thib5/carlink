@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -12,7 +14,7 @@ android {
     // Owner identity for the cluster icon ContentProvider hook (issue #6).
     // A FORK changes ONLY ownerApplicationId below — applicationId and the play-flavor
     // cluster icon authority both follow it automatically.
-    val ownerApplicationId = "zeno.carlink"
+    val ownerApplicationId = "com.thib5.carlink"
     val gmClusterIconAuthority =
         "com.google.android.apps.automotive.templates.host.ClusterIconContentProvider"
 
@@ -38,6 +40,24 @@ android {
         }
     }
 
+    // Release signing: reads keystore.properties at the repo root when present
+    // (storeFile, storePassword, keyAlias, keyPassword). The file and the keystore
+    // are gitignored — CI/local builds without it produce an unsigned release.
+    val keystorePropsFile = rootProject.file("keystore.properties")
+    val releaseSigning =
+        if (keystorePropsFile.exists()) {
+            val props = Properties()
+            keystorePropsFile.inputStream().use { stream -> props.load(stream) }
+            signingConfigs.create("release") {
+                storeFile = file(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            }
+        } else {
+            null
+        }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -45,6 +65,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = releaseSigning
         }
     }
 

@@ -81,3 +81,8 @@ mempalace.yaml
 # Serena MCP local cache/logs/config
 .serena/
 **/.serena/
+
+# Signing secrets (never commit)
+keystore.properties
+*.jks
+*.keystore
