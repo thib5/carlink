@@ -107,10 +107,12 @@ class UsbDeviceWrapper(
      * Request USB permission from the user.
      * This will show a system dialog asking the user to grant permission.
      *
-     * @param timeoutMs Timeout in milliseconds to wait for user response
+     * @param timeoutMs Timeout in milliseconds to wait for user response. Defaults to no
+     *   timeout: the system dialog stays up until answered, and giving up early unregistered
+     *   the receiver so a late "Allow" tap was lost and the user had to hit Reset.
      * @return true if permission was granted, false if denied or timeout
      */
-    suspend fun requestPermission(timeoutMs: Long = 30_000L): Boolean {
+    suspend fun requestPermission(timeoutMs: Long = Long.MAX_VALUE): Boolean {
         if (usbManager.hasPermission(device)) {
             log("Permission already granted for ${device.deviceName}")
             return true

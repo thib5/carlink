@@ -105,6 +105,7 @@ class CarlinkManager(
 
     companion object {
         private const val USB_WAIT_PERIOD_MS = 3000L
+        private const val USB_SEARCH_SLOW_HINT_ATTEMPTS = 10
         private const val PAIR_TIMEOUT_MS = 15000L
 
         // Auto-reconnect constants
@@ -1432,15 +1433,24 @@ class CarlinkManager(
         }
     }
 
+    /**
+     * Polls for the adapter until it enumerates. No attempt cap: on a cold boot the head unit
+     * can start the app well before the adapter shows up on the bus, and a capped search left
+     * the app stuck on "Adapter not found" until the user tapped Reset. The loop ends when the
+     * device is found, the coroutine is cancelled, or stop()/release() moves us out of CONNECTING.
+     */
     private suspend fun findDevice(): UsbDeviceWrapper? {
         var device: UsbDeviceWrapper? = null
         var attempts = 0
 
-        while (device == null && attempts < 10) {
+        while (device == null && state == State.CONNECTING) {
             device = UsbDeviceWrapper.findFirst(context, usbManager) { log(it) }
 
             if (device == null) {
                 attempts++
+                if (attempts == USB_SEARCH_SLOW_HINT_ATTEMPTS) {
+                    setStatusText("Waiting for adapter...")
+                }
                 delay(USB_WAIT_PERIOD_MS)
             }
         }
