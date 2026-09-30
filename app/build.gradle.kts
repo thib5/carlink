@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -14,10 +16,10 @@ android {
 //###############################################
 
     defaultConfig {
-        applicationId = "com.motoinsight.carlink"
+        applicationId = "com.thib5.carlink" // Play Console: EquinoxCP2 (NOT com.motoinsight.carlink)
         minSdk = 32 // GM gminfo = Android 12L / API 32
         targetSdk = 36
-        versionCode = 147
+        versionCode = 148
         versionName = "1.0.0"
 
 //###############################################
@@ -31,6 +33,24 @@ android {
         }
     }
 
+    // Release signing: reads keystore.properties at the repo root when present
+    // (storeFile, storePassword, keyAlias, keyPassword). The file and the keystore
+    // are gitignored — builds without it produce an unsigned release.
+    val keystorePropsFile = rootProject.file("keystore.properties")
+    val releaseSigning =
+        if (keystorePropsFile.exists()) {
+            val props = Properties()
+            keystorePropsFile.inputStream().use { stream -> props.load(stream) }
+            signingConfigs.create("release") {
+                storeFile = file(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            }
+        } else {
+            null
+        }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -39,6 +59,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = releaseSigning
         }
     }
 
