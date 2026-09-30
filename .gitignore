@@ -84,3 +84,6 @@ mempalace.yaml
 
 # Personal planning notes (local only)
 documents/STRIP_PLAN.md
+
+# Release signing config (local only)
+keystore.properties
