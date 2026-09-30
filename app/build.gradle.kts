@@ -14,7 +14,7 @@ android {
 //###############################################
 
     defaultConfig {
-        applicationId = "zeno.carlink"
+        applicationId = "com.motoinsight.carlink"
         minSdk = 32 // GM gminfo = Android 12L / API 32
         targetSdk = 36
         versionCode = 147
