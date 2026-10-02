@@ -14,6 +14,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -362,6 +364,9 @@ fun MainScreen(
 
 // ==================== Dashboard ====================
 
+/** Swallow taps on a card's empty areas so they don't reach the "tap outside to close" layer. */
+private fun Modifier.consumeTaps(): Modifier = pointerInput(Unit) { detectTapGestures { } }
+
 /** Landscape dashboard cards take this fraction of the available height (moderate, not full). */
 private const val CARD_HEIGHT_FRACTION = 0.8f
 
@@ -440,6 +445,11 @@ private fun CarlinkDashboard(
             Modifier
                 .fillMaxSize()
                 .background(if (overlaying) Color.Black.copy(alpha = OVERLAY_SCRIM_ALPHA) else Color.Black)
+                // Over a live CarPlay session: a tap on empty space (outside the cards) closes the
+                // menu and returns to CarPlay. When idle, taps are just swallowed.
+                .pointerInput(onReturnToProjection) {
+                    detectTapGestures { onReturnToProjection?.invoke() }
+                }
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(16.dp),
     ) {
@@ -535,7 +545,7 @@ private fun AdapterCard(
     var showRebootDialog by remember { mutableStateOf(false) }
     var showCloseDialog by remember { mutableStateOf(false) }
 
-    Box(modifier = modifier.frostedGlass(GlassShapes.Card, strong = true)) {
+    Box(modifier = modifier.frostedGlass(GlassShapes.Card, strong = true).consumeTaps()) {
         Column(
             modifier = Modifier.padding(20.dp).fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -715,7 +725,7 @@ private fun KnownDevicesCard(
     carlinkManager: CarlinkManager,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier.fillMaxWidth().frostedGlass(GlassShapes.Card, strong = true)) {
+    Box(modifier = modifier.fillMaxWidth().frostedGlass(GlassShapes.Card, strong = true).consumeTaps()) {
         Column(modifier = Modifier.padding(20.dp).fillMaxSize()) {
             Text(
                 text = "Tap a known device or remove it",
