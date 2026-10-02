@@ -19,7 +19,7 @@ android {
         applicationId = "com.thib5.carlink" // Play Console: EquinoxCP2 (NOT com.motoinsight.carlink)
         minSdk = 32 // GM gminfo = Android 12L / API 32
         targetSdk = 36
-        versionCode = 150
+        versionCode = 151
         versionName = "1.0.0"
 
 //###############################################
