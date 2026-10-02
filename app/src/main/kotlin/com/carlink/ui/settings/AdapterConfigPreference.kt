@@ -19,11 +19,10 @@ private val Context.adapterConfigDataStore: DataStore<Preferences> by preference
 /**
  * Slim adapter-init bookkeeping for the personal CarPlay-only (cp-stripped) build.
  *
- * All per-setting user configuration (audio/mic/wifi/resolution/fps/hand-drive/gps/cluster)
- * was removed in this variant — the adapter config is hardcoded (see [com.carlink.protocol.AdapterConfig]
- * defaults + MainActivity). This class now only tracks whether a FULL init has run for the
- * current app version, so each connection sends a FULL init on first install / version bump
- * and a MINIMAL init on every subsequent session (the adapter persists the rest in flash).
+ * User-facing settings live in [CarlinkSettings]; this class tracks whether a FULL init has run
+ * for the current app version / adapter / settings, so each connection sends a FULL init on first
+ * install, version bump, new adapter or settings change, and a MINIMAL init on every other session
+ * (the adapter persists the rest in flash).
  *
  * Two-tier storage: DataStore (source of truth) + a SharedPreferences sync cache for
  * ANR-free main-thread reads during Activity.onCreate. The two writes are not transactional;
@@ -99,6 +98,8 @@ class AdapterConfigPreference private constructor(
     suspend fun updateLastInitVersionCode(versionCode: Long) {
         dataStore.edit { it[KEY_LAST_INIT_VERSION_CODE] = versionCode }
         syncCache.edit().putLong(SYNC_CACHE_KEY_LAST_INIT_VERSION_CODE, versionCode).apply()
+        // The adapter now holds the current user settings.
+        CarlinkSettings.getInstance(appContext).adapterConfigDirty = false
     }
 
     /** Hardware uuid of the adapter last FULL-staged (null if never). */
@@ -125,6 +126,7 @@ class AdapterConfigPreference private constructor(
     ): InitMode =
         when {
             !hasCompletedFirstInitSync() -> InitMode.FULL
+            CarlinkSettings.getInstance(appContext).adapterConfigDirty -> InitMode.FULL
             getLastInitVersionCode() != currentVersionCode -> InitMode.FULL
             adapterUuid != null && adapterUuid != getLastStagedUuid() -> InitMode.FULL
             else -> InitMode.MINIMAL_ONLY
@@ -138,6 +140,8 @@ class AdapterConfigPreference private constructor(
             InitMode.FULL ->
                 when {
                     !hasCompletedFirstInitSync() -> "FULL (first launch)"
+                    CarlinkSettings.getInstance(appContext).adapterConfigDirty ->
+                        "FULL (settings changed)"
                     getLastInitVersionCode() != currentVersionCode ->
                         "FULL (version ${getLastInitVersionCode()} → $currentVersionCode)"
                     else -> "FULL (new/unrecognized adapter uuid=$adapterUuid, staged=${getLastStagedUuid()})"

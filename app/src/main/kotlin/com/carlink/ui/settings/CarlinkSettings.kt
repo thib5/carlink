@@ -1,0 +1,324 @@
+package com.carlink.ui.settings
+
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.core.content.edit
+
+/**
+ * User settings for the personal CarPlay build ("Réglages" screen).
+ *
+ * Plain SharedPreferences (synchronous, ANR-free at this size) — every value is read on the main
+ * thread while MainActivity builds the AdapterConfig. Any change that the adapter must learn about
+ * sets [adapterConfigDirty], which forces the next connection to send a FULL init (see
+ * [AdapterConfigPreference.getInitializationMode]); [com.carlink.MainActivity.reinitialize] then
+ * rebuilds the session so the change applies immediately.
+ *
+ * PERSISTENCE CONTRACT: values are stored by their explicit `key`/`value` — never by enum ordinal.
+ */
+class CarlinkSettings private constructor(
+    context: Context,
+) {
+    private val prefs: SharedPreferences =
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    // ==================== Affichage ====================
+
+    /**
+     * "Zoom" (taille des icônes), in percent. 100 = native resolution (tiny CarPlay icons on a
+     * large high-res panel). Higher values ask the iPhone to render a SMALLER canvas
+     * (display / zoom) which the head unit then scales up to fill the screen → everything in
+     * CarPlay (icons, text, buttons) appears proportionally bigger. DPI is kept unchanged on
+     * purpose so CarPlay keeps the same render scale and only the canvas shrinks.
+     */
+    var zoomPercent: Int
+        get() = prefs.getInt(KEY_ZOOM, DEFAULT_ZOOM).coerceIn(MIN_ZOOM, MAX_ZOOM)
+        set(value) = prefs.edit { putInt(KEY_ZOOM, value.coerceIn(MIN_ZOOM, MAX_ZOOM)) }
+
+    var displayMode: DisplayModeSetting
+        get() = DisplayModeSetting.fromKey(prefs.getString(KEY_DISPLAY_MODE, null))
+        set(value) = prefs.edit { putString(KEY_DISPLAY_MODE, value.key) }
+
+    var fps: Int
+        get() = if (prefs.getInt(KEY_FPS, 60) == 30) 30 else 60
+        set(value) = prefs.edit { putInt(KEY_FPS, if (value == 30) 30 else 60) }
+
+    var handDrive: HandDriveSetting
+        get() = HandDriveSetting.fromValue(prefs.getInt(KEY_HAND_DRIVE, HandDriveSetting.LEFT.value))
+        set(value) = prefs.edit { putInt(KEY_HAND_DRIVE, value.value) }
+
+    // ==================== Son ====================
+
+    var audioOutput: AudioOutputSetting
+        get() = AudioOutputSetting.fromKey(prefs.getString(KEY_AUDIO_OUTPUT, null))
+        set(value) = prefs.edit { putString(KEY_AUDIO_OUTPUT, value.key) }
+
+    /** Adapter-side media buffer (ms). Lower = less lag, higher = fewer dropouts. */
+    var mediaDelayMs: Int
+        get() = prefs.getInt(KEY_MEDIA_DELAY, DEFAULT_MEDIA_DELAY).let { v ->
+            if (v in MEDIA_DELAY_OPTIONS) v else DEFAULT_MEDIA_DELAY
+        }
+        set(value) = prefs.edit { putInt(KEY_MEDIA_DELAY, if (value in MEDIA_DELAY_OPTIONS) value else DEFAULT_MEDIA_DELAY) }
+
+    var micSource: MicSourceSetting
+        get() = MicSourceSetting.fromKey(prefs.getString(KEY_MIC_SOURCE, null))
+        set(value) = prefs.edit { putString(KEY_MIC_SOURCE, value.key) }
+
+    /**
+     * Bluetooth anti-cut fix #1 (default ON). AAOS CarMediaService calls
+     * `TransportControls.stop()` on the previous media source whenever another source (e.g. the
+     * car's Bluetooth Audio, mirroring the iPhone's AVRCP "playing") starts playing. Forwarding that
+     * stop() to the phone as PAUSE is what made music stop ~2 s after it started when the iPhone
+     * was also paired over Bluetooth. When true, system stop() is NOT forwarded to the phone.
+     */
+    var ignoreSystemStop: Boolean
+        get() = prefs.getBoolean(KEY_IGNORE_SYSTEM_STOP, true)
+        set(value) {
+            prefs.edit { putBoolean(KEY_IGNORE_SYSTEM_STOP, value) }
+            cachedIgnoreSystemStop = value
+        }
+
+    /**
+     * Bluetooth anti-cut fix #2 (default OFF). When true the app's media session never reports
+     * "playing" to the car, so CarMediaService never switches the active source to Carlink and
+     * therefore never sends stop() to the car's Bluetooth source (which the car would relay to the
+     * iPhone over AVRCP as a pause). Trade-off: the car's media card shows Carlink as paused.
+     */
+    var discreetMediaSession: Boolean
+        get() = prefs.getBoolean(KEY_DISCREET_MEDIA, false)
+        set(value) {
+            prefs.edit { putBoolean(KEY_DISCREET_MEDIA, value) }
+            cachedDiscreetMediaSession = value
+        }
+
+    // ==================== Connexion ====================
+
+    var wifiBand: WifiBandSetting
+        get() = WifiBandSetting.fromKey(prefs.getString(KEY_WIFI_BAND, null))
+        set(value) = prefs.edit { putString(KEY_WIFI_BAND, value.key) }
+
+    // ==================== Bookkeeping ====================
+
+    /** True when a setting changed since the last successful FULL init. */
+    var adapterConfigDirty: Boolean
+        get() = prefs.getBoolean(KEY_DIRTY, false)
+        set(value) = prefs.edit(commit = true) { putBoolean(KEY_DIRTY, value) }
+
+    /** Restore every setting to its default (and flag a FULL re-init). */
+    fun resetToDefaults() {
+        prefs.edit(commit = true) {
+            clear()
+            putBoolean(KEY_DIRTY, true)
+        }
+        cachedIgnoreSystemStop = true
+        cachedDiscreetMediaSession = false
+    }
+
+    /** Immutable snapshot of everything (for the settings UI state). */
+    fun snapshot(): Snapshot =
+        Snapshot(
+            zoomPercent = zoomPercent,
+            displayMode = displayMode,
+            fps = fps,
+            handDrive = handDrive,
+            audioOutput = audioOutput,
+            mediaDelayMs = mediaDelayMs,
+            micSource = micSource,
+            ignoreSystemStop = ignoreSystemStop,
+            discreetMediaSession = discreetMediaSession,
+            wifiBand = wifiBand,
+        )
+
+    /** Persist a full snapshot in one go. Returns true if anything changed. */
+    fun apply(new: Snapshot): Boolean {
+        val old = snapshot()
+        if (old == new) return false
+        prefs.edit(commit = true) {
+            putInt(KEY_ZOOM, new.zoomPercent.coerceIn(MIN_ZOOM, MAX_ZOOM))
+            putString(KEY_DISPLAY_MODE, new.displayMode.key)
+            putInt(KEY_FPS, new.fps)
+            putInt(KEY_HAND_DRIVE, new.handDrive.value)
+            putString(KEY_AUDIO_OUTPUT, new.audioOutput.key)
+            putInt(KEY_MEDIA_DELAY, new.mediaDelayMs)
+            putString(KEY_MIC_SOURCE, new.micSource.key)
+            putBoolean(KEY_IGNORE_SYSTEM_STOP, new.ignoreSystemStop)
+            putBoolean(KEY_DISCREET_MEDIA, new.discreetMediaSession)
+            putString(KEY_WIFI_BAND, new.wifiBand.key)
+            putBoolean(KEY_DIRTY, true)
+        }
+        cachedIgnoreSystemStop = new.ignoreSystemStop
+        cachedDiscreetMediaSession = new.discreetMediaSession
+        return true
+    }
+
+    data class Snapshot(
+        val zoomPercent: Int,
+        val displayMode: DisplayModeSetting,
+        val fps: Int,
+        val handDrive: HandDriveSetting,
+        val audioOutput: AudioOutputSetting,
+        val mediaDelayMs: Int,
+        val micSource: MicSourceSetting,
+        val ignoreSystemStop: Boolean,
+        val discreetMediaSession: Boolean,
+        val wifiBand: WifiBandSetting,
+    ) {
+        /**
+         * True when switching from [this] to [other] only touches app-side behaviour (no adapter
+         * re-init / session rebuild needed).
+         */
+        fun differsOnlyInAppSide(other: Snapshot): Boolean =
+            copy(ignoreSystemStop = other.ignoreSystemStop, discreetMediaSession = other.discreetMediaSession) == other
+    }
+
+    companion object {
+        private const val PREFS_NAME = "carlink_user_settings"
+
+        private const val KEY_ZOOM = "zoom_percent"
+        private const val KEY_DISPLAY_MODE = "display_mode"
+        private const val KEY_FPS = "fps"
+        private const val KEY_HAND_DRIVE = "hand_drive"
+        private const val KEY_AUDIO_OUTPUT = "audio_output"
+        private const val KEY_MEDIA_DELAY = "media_delay_ms"
+        private const val KEY_MIC_SOURCE = "mic_source"
+        private const val KEY_IGNORE_SYSTEM_STOP = "ignore_system_stop"
+        private const val KEY_DISCREET_MEDIA = "discreet_media_session"
+        private const val KEY_WIFI_BAND = "wifi_band"
+        private const val KEY_DIRTY = "adapter_config_dirty"
+
+        const val MIN_ZOOM = 100
+        const val MAX_ZOOM = 200
+        const val DEFAULT_ZOOM = 100
+
+        /** Zoom presets shown as big buttons (percent). */
+        val ZOOM_PRESETS = listOf(100, 125, 150, 175, 200)
+
+        const val DEFAULT_MEDIA_DELAY = 500
+        val MEDIA_DELAY_OPTIONS = listOf(300, 500, 1000, 2000)
+
+        @Volatile
+        private var instance: CarlinkSettings? = null
+
+        // Hot-path caches read from the media/player classes without a Context.
+        @Volatile
+        private var cachedIgnoreSystemStop: Boolean = true
+
+        @Volatile
+        private var cachedDiscreetMediaSession: Boolean = false
+
+        fun getInstance(context: Context): CarlinkSettings =
+            instance ?: synchronized(this) {
+                instance ?: CarlinkSettings(context.applicationContext).also {
+                    cachedIgnoreSystemStop = it.ignoreSystemStop
+                    cachedDiscreetMediaSession = it.discreetMediaSession
+                    instance = it
+                }
+            }
+
+        /** Factory defaults (what "Remettre par défaut" restores). */
+        val DEFAULTS =
+            Snapshot(
+                zoomPercent = DEFAULT_ZOOM,
+                displayMode = DisplayModeSetting.DEFAULT,
+                fps = 60,
+                handDrive = HandDriveSetting.LEFT,
+                audioOutput = AudioOutputSetting.DEFAULT,
+                mediaDelayMs = DEFAULT_MEDIA_DELAY,
+                micSource = MicSourceSetting.DEFAULT,
+                ignoreSystemStop = true,
+                discreetMediaSession = false,
+                wifiBand = WifiBandSetting.DEFAULT,
+            )
+
+        /** Fix #1 flag, readable without a Context (defaults ON until settings are loaded). */
+        fun ignoreSystemStopFlag(): Boolean = cachedIgnoreSystemStop
+
+        /** Fix #2 flag, readable without a Context (defaults OFF until settings are loaded). */
+        fun discreetMediaSessionFlag(): Boolean = cachedDiscreetMediaSession
+    }
+}
+
+/** How the AAOS system bars (top status bar / dock) behave around CarPlay. */
+enum class DisplayModeSetting(
+    val key: String,
+    val label: String,
+    val description: String,
+) {
+    FULLSCREEN("fullscreen", "Plein écran", "CarPlay prend tout l'écran. Glisse depuis le bord pour voir les barres de l'auto."),
+    BARS_VISIBLE("bars_visible", "Barres visibles", "Les barres de l'auto restent affichées. CarPlay prend le reste."),
+    STATUS_HIDDEN("status_hidden", "Sans barre du haut", "Cache la barre d'état du haut, garde la barre de l'auto."),
+    DOCK_HIDDEN("dock_hidden", "Sans barre de l'auto", "Cache la barre/le dock de l'auto, garde la barre du haut."),
+    ;
+
+    companion object {
+        val DEFAULT = FULLSCREEN
+
+        fun fromKey(key: String?): DisplayModeSetting = entries.find { it.key == key } ?: DEFAULT
+    }
+}
+
+enum class AudioOutputSetting(
+    val key: String,
+    val label: String,
+    val description: String,
+) {
+    ADAPTER(
+        "adapter",
+        "Par l'app (USB)",
+        "Le son CarPlay passe par l'adaptateur et sort dans les haut-parleurs de l'auto via cette app.",
+    ),
+    BLUETOOTH(
+        "bluetooth",
+        "Bluetooth du téléphone",
+        "Le son sort directement du iPhone vers le Bluetooth de l'auto. CarPlay n'envoie que l'image.",
+    ),
+    ;
+
+    companion object {
+        val DEFAULT = ADAPTER
+
+        fun fromKey(key: String?): AudioOutputSetting = entries.find { it.key == key } ?: DEFAULT
+    }
+}
+
+enum class MicSourceSetting(
+    val key: String,
+    val label: String,
+) {
+    CAR("car", "Micro de l'auto"),
+    PHONE("phone", "Micro du téléphone"),
+    ;
+
+    companion object {
+        val DEFAULT = CAR
+
+        fun fromKey(key: String?): MicSourceSetting = entries.find { it.key == key } ?: DEFAULT
+    }
+}
+
+enum class WifiBandSetting(
+    val key: String,
+    val label: String,
+) {
+    BAND_5GHZ("5ghz", "5 GHz (recommandé)"),
+    BAND_24GHZ("24ghz", "2,4 GHz"),
+    ;
+
+    companion object {
+        val DEFAULT = BAND_5GHZ
+
+        fun fromKey(key: String?): WifiBandSetting = entries.find { it.key == key } ?: DEFAULT
+    }
+}
+
+enum class HandDriveSetting(
+    val value: Int,
+    val label: String,
+) {
+    LEFT(0, "Volant à gauche"),
+    RIGHT(1, "Volant à droite"),
+    ;
+
+    companion object {
+        fun fromValue(value: Int): HandDriveSetting = entries.find { it.value == value } ?: LEFT
+    }
+}
