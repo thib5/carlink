@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Usb
@@ -111,6 +112,7 @@ fun MainScreen(
     displayMode: DisplayModeSetting = DisplayModeSetting.DEFAULT,
     onResetConnection: (() -> Unit)? = null,
     onApplySettings: (CarlinkSettings.Snapshot) -> Unit = {},
+    onCloseApp: () -> Unit = {},
 ) {
     // Key state on carlinkManager identity — when the manager is replaced (Reset Connection
     // rebuild), all session-scoped state resets automatically, preventing stale callbacks /
@@ -220,7 +222,11 @@ fun MainScreen(
     // per-mode resolution computation.
     val videoAreaModifier =
         when (displayMode) {
-            DisplayModeSetting.FULLSCREEN -> Modifier.fillMaxSize()
+            // FULLSCREEN_STATUS: video runs under the transparent status bar (SafeArea keeps
+            // CarPlay's UI clear of it), so no padding.
+            DisplayModeSetting.FULLSCREEN,
+            DisplayModeSetting.FULLSCREEN_STATUS,
+            -> Modifier.fillMaxSize()
             DisplayModeSetting.BARS_VISIBLE ->
                 Modifier
                     .fillMaxSize()
@@ -321,6 +327,7 @@ fun MainScreen(
                     statusText = statusText,
                     onResetConnection = onResetConnection,
                     onOpenSettings = { showSettings = true },
+                    onCloseApp = onCloseApp,
                     onReturnToProjection =
                         if (overlayingSession) {
                             {
@@ -408,6 +415,7 @@ private fun CarlinkDashboard(
     statusText: String,
     onResetConnection: (() -> Unit)?,
     onOpenSettings: () -> Unit,
+    onCloseApp: () -> Unit = {},
     onReturnToProjection: (() -> Unit)? = null,
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -460,6 +468,7 @@ private fun CarlinkDashboard(
                         stretchStatus = true,
                         onReturnToProjection = onReturnToProjection,
                         onOpenSettings = onOpenSettings,
+                        onCloseApp = onCloseApp,
                     )
                     KnownDevicesCard(carlinkManager, Modifier.weight(0.76f).fillMaxHeight())
                 }
@@ -475,6 +484,7 @@ private fun CarlinkDashboard(
                         Modifier.fillMaxWidth(),
                         onReturnToProjection = onReturnToProjection,
                         onOpenSettings = onOpenSettings,
+                        onCloseApp = onCloseApp,
                     )
                     KnownDevicesCard(carlinkManager, Modifier.fillMaxWidth())
                 }
@@ -517,11 +527,13 @@ private fun AdapterCard(
     // otherwise the button is shown greyed-out/disabled as a permanent placeholder.
     onReturnToProjection: (() -> Unit)? = null,
     onOpenSettings: () -> Unit = {},
+    onCloseApp: () -> Unit = {},
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     var isProcessing by remember { mutableStateOf(false) }
     var showRebootDialog by remember { mutableStateOf(false) }
+    var showCloseDialog by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.frostedGlass(GlassShapes.Card, strong = true)) {
         Column(
@@ -580,14 +592,28 @@ private fun AdapterCard(
             // --- Controls: Réglages = glass (primary), Reboot = glass (warning tint),
             // Reset = solid vibrant accent (destructive) ---
             Spacer(modifier = Modifier.height(16.dp))
-            GlassButton(
-                onClick = onOpenSettings,
-                contentColor = colorScheme.primary,
-                modifier = Modifier.fillMaxWidth().height(AutomotiveDimens.ButtonMinHeight),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Icon(imageVector = Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(24.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "Réglages", style = MaterialTheme.typography.titleMedium)
+                GlassButton(
+                    onClick = onOpenSettings,
+                    contentColor = colorScheme.primary,
+                    modifier = Modifier.weight(1f).height(AutomotiveDimens.ButtonMinHeight),
+                ) {
+                    Icon(imageVector = Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "Réglages", style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                }
+                GlassButton(
+                    onClick = { showCloseDialog = true },
+                    contentColor = colorScheme.error,
+                    modifier = Modifier.weight(1f).height(AutomotiveDimens.ButtonMinHeight),
+                ) {
+                    Icon(imageVector = Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "Fermer", style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -629,6 +655,24 @@ private fun AdapterCard(
                 },
             )
         }
+    }
+
+    if (showCloseDialog) {
+        AlertDialog(
+            onDismissRequest = { showCloseDialog = false },
+            icon = {
+                Icon(imageVector = Icons.Default.PowerSettingsNew, contentDescription = null, tint = colorScheme.error)
+            },
+            title = { Text("Fermer l'app ?") },
+            text = { Text("CarPlay va se déconnecter et l'auto revient à son écran d'accueil.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showCloseDialog = false
+                    onCloseApp()
+                }) { Text("Fermer", color = colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showCloseDialog = false }) { Text("Annuler") } },
+        )
     }
 
     if (showRebootDialog) {
