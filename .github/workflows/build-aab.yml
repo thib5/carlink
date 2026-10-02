@@ -1,0 +1,36 @@
+name: Build unsigned AAB
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "claude/carlink-apk-fork-access-gwyx5e" ]
+    paths: [ "app/**", "*.gradle.kts", "gradle/**", ".github/workflows/build-aab.yml" ]
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK platform 37
+        run: sdkmanager --install "platforms;android-37" || true
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build release bundle (unsigned; signed locally afterwards)
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:bundleSideloadRelease --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: carlink-unsigned-aab
+          path: app/build/outputs/bundle/sideloadRelease/*.aab
+          if-no-files-found: error
