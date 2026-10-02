@@ -37,7 +37,6 @@ import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -89,7 +88,7 @@ fun SettingsPanel(
     var section by remember { mutableStateOf(SettingsSection.DISPLAY) }
     var confirmDefaults by remember { mutableStateOf(false) }
     val changed = draft != saved
-    val needsRestart = changed && !saved.differsOnlyInAppSide(draft)
+    val needsRestart = changed
     val colors = MaterialTheme.colorScheme
 
     Box(
@@ -465,27 +464,6 @@ private fun SoundSection(
     }
 
     SettingGroup(
-        title = "Son qui coupe après 2 secondes",
-        hint = "Arrive quand le iPhone est aussi connecté au Bluetooth de l'auto : l'auto croit que " +
-            "c'est une autre source et met la musique sur pause. Ces correctifs l'en empêchent.",
-    ) {
-        ToggleRow(
-            title = "Ignorer les « stop » envoyés par l'auto",
-            description = "Recommandé. L'auto ne pourra plus mettre CarPlay sur pause en changeant de source. " +
-                "Les boutons pause du volant et de l'écran fonctionnent toujours.",
-            checked = draft.ignoreSystemStop,
-            onCheckedChange = { onChange(draft.copy(ignoreSystemStop = it)) },
-        )
-        ToggleRow(
-            title = "Mode discret",
-            description = "À essayer si ça coupe encore. L'app ne se déclare jamais « en lecture » auprès de l'auto, " +
-                "donc l'auto ne coupe plus le Bluetooth. Effet secondaire : la carte média de l'auto montre CarPlay sur pause.",
-            checked = draft.discreetMediaSession,
-            onCheckedChange = { onChange(draft.copy(discreetMediaSession = it)) },
-        )
-    }
-
-    SettingGroup(
         title = "Délai du son",
         hint = "Si le son grésille ou saute, prends une valeur plus stable.",
     ) {
@@ -634,33 +612,5 @@ private fun OptionCard(
             Text(title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold), color = colors.onSurface)
             Text(description, style = MaterialTheme.typography.titleMedium, color = colors.onSurfaceVariant)
         }
-    }
-}
-
-@Composable
-private fun ToggleRow(
-    title: String,
-    description: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 88.dp)
-                .frostedGlass(GlassShapes.Inner)
-                .clip(GlassShapes.Inner)
-                .clickable { onCheckedChange(!checked) }
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold), color = colors.onSurface)
-            Text(description, style = MaterialTheme.typography.titleMedium, color = colors.onSurfaceVariant)
-        }
-        Spacer(Modifier.width(20.dp))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

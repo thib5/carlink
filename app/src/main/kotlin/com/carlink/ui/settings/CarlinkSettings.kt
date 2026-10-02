@@ -63,33 +63,6 @@ class CarlinkSettings private constructor(
         get() = MicSourceSetting.fromKey(prefs.getString(KEY_MIC_SOURCE, null))
         set(value) = prefs.edit { putString(KEY_MIC_SOURCE, value.key) }
 
-    /**
-     * Bluetooth anti-cut fix #1 (default ON). AAOS CarMediaService calls
-     * `TransportControls.stop()` on the previous media source whenever another source (e.g. the
-     * car's Bluetooth Audio, mirroring the iPhone's AVRCP "playing") starts playing. Forwarding that
-     * stop() to the phone as PAUSE is what made music stop ~2 s after it started when the iPhone
-     * was also paired over Bluetooth. When true, system stop() is NOT forwarded to the phone.
-     */
-    var ignoreSystemStop: Boolean
-        get() = prefs.getBoolean(KEY_IGNORE_SYSTEM_STOP, true)
-        set(value) {
-            prefs.edit { putBoolean(KEY_IGNORE_SYSTEM_STOP, value) }
-            cachedIgnoreSystemStop = value
-        }
-
-    /**
-     * Bluetooth anti-cut fix #2 (default OFF). When true the app's media session never reports
-     * "playing" to the car, so CarMediaService never switches the active source to Carlink and
-     * therefore never sends stop() to the car's Bluetooth source (which the car would relay to the
-     * iPhone over AVRCP as a pause). Trade-off: the car's media card shows Carlink as paused.
-     */
-    var discreetMediaSession: Boolean
-        get() = prefs.getBoolean(KEY_DISCREET_MEDIA, false)
-        set(value) {
-            prefs.edit { putBoolean(KEY_DISCREET_MEDIA, value) }
-            cachedDiscreetMediaSession = value
-        }
-
     // ==================== Connexion ====================
 
     var wifiBand: WifiBandSetting
@@ -109,8 +82,6 @@ class CarlinkSettings private constructor(
             clear()
             putBoolean(KEY_DIRTY, true)
         }
-        cachedIgnoreSystemStop = true
-        cachedDiscreetMediaSession = false
     }
 
     /** Immutable snapshot of everything (for the settings UI state). */
@@ -123,8 +94,6 @@ class CarlinkSettings private constructor(
             audioOutput = audioOutput,
             mediaDelayMs = mediaDelayMs,
             micSource = micSource,
-            ignoreSystemStop = ignoreSystemStop,
-            discreetMediaSession = discreetMediaSession,
             wifiBand = wifiBand,
         )
 
@@ -140,13 +109,9 @@ class CarlinkSettings private constructor(
             putString(KEY_AUDIO_OUTPUT, new.audioOutput.key)
             putInt(KEY_MEDIA_DELAY, new.mediaDelayMs)
             putString(KEY_MIC_SOURCE, new.micSource.key)
-            putBoolean(KEY_IGNORE_SYSTEM_STOP, new.ignoreSystemStop)
-            putBoolean(KEY_DISCREET_MEDIA, new.discreetMediaSession)
             putString(KEY_WIFI_BAND, new.wifiBand.key)
             putBoolean(KEY_DIRTY, true)
         }
-        cachedIgnoreSystemStop = new.ignoreSystemStop
-        cachedDiscreetMediaSession = new.discreetMediaSession
         return true
     }
 
@@ -158,17 +123,8 @@ class CarlinkSettings private constructor(
         val audioOutput: AudioOutputSetting,
         val mediaDelayMs: Int,
         val micSource: MicSourceSetting,
-        val ignoreSystemStop: Boolean,
-        val discreetMediaSession: Boolean,
         val wifiBand: WifiBandSetting,
-    ) {
-        /**
-         * True when switching from [this] to [other] only touches app-side behaviour (no adapter
-         * re-init / session rebuild needed).
-         */
-        fun differsOnlyInAppSide(other: Snapshot): Boolean =
-            copy(ignoreSystemStop = other.ignoreSystemStop, discreetMediaSession = other.discreetMediaSession) == other
-    }
+    )
 
     companion object {
         private const val PREFS_NAME = "carlink_user_settings"
@@ -180,8 +136,6 @@ class CarlinkSettings private constructor(
         private const val KEY_AUDIO_OUTPUT = "audio_output"
         private const val KEY_MEDIA_DELAY = "media_delay_ms"
         private const val KEY_MIC_SOURCE = "mic_source"
-        private const val KEY_IGNORE_SYSTEM_STOP = "ignore_system_stop"
-        private const val KEY_DISCREET_MEDIA = "discreet_media_session"
         private const val KEY_WIFI_BAND = "wifi_band"
         private const val KEY_DIRTY = "adapter_config_dirty"
 
@@ -198,20 +152,9 @@ class CarlinkSettings private constructor(
         @Volatile
         private var instance: CarlinkSettings? = null
 
-        // Hot-path caches read from the media/player classes without a Context.
-        @Volatile
-        private var cachedIgnoreSystemStop: Boolean = true
-
-        @Volatile
-        private var cachedDiscreetMediaSession: Boolean = false
-
         fun getInstance(context: Context): CarlinkSettings =
             instance ?: synchronized(this) {
-                instance ?: CarlinkSettings(context.applicationContext).also {
-                    cachedIgnoreSystemStop = it.ignoreSystemStop
-                    cachedDiscreetMediaSession = it.discreetMediaSession
-                    instance = it
-                }
+                instance ?: CarlinkSettings(context.applicationContext).also { instance = it }
             }
 
         /** Factory defaults (what "Remettre par défaut" restores). */
@@ -224,16 +167,8 @@ class CarlinkSettings private constructor(
                 audioOutput = AudioOutputSetting.DEFAULT,
                 mediaDelayMs = DEFAULT_MEDIA_DELAY,
                 micSource = MicSourceSetting.DEFAULT,
-                ignoreSystemStop = true,
-                discreetMediaSession = false,
                 wifiBand = WifiBandSetting.DEFAULT,
             )
-
-        /** Fix #1 flag, readable without a Context (defaults ON until settings are loaded). */
-        fun ignoreSystemStopFlag(): Boolean = cachedIgnoreSystemStop
-
-        /** Fix #2 flag, readable without a Context (defaults OFF until settings are loaded). */
-        fun discreetMediaSessionFlag(): Boolean = cachedDiscreetMediaSession
     }
 }
 
@@ -244,6 +179,11 @@ enum class DisplayModeSetting(
     val description: String,
 ) {
     FULLSCREEN("fullscreen", "Plein écran", "CarPlay prend tout l'écran. Glisse depuis le bord pour voir les barres de l'auto."),
+    FULLSCREEN_STATUS(
+        "fullscreen_status",
+        "Plein écran + barre du haut",
+        "CarPlay prend tout l'écran et la barre du haut reste affichée par-dessus, sur le fond CarPlay.",
+    ),
     BARS_VISIBLE("bars_visible", "Barres visibles", "Les barres de l'auto restent affichées. CarPlay prend le reste."),
     STATUS_HIDDEN("status_hidden", "Sans barre du haut", "Cache la barre d'état du haut, garde la barre de l'auto."),
     DOCK_HIDDEN("dock_hidden", "Sans barre de l'auto", "Cache la barre/le dock de l'auto, garde la barre du haut."),
