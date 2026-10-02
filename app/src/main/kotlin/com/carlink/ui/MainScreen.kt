@@ -28,7 +28,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -36,6 +38,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -83,7 +86,10 @@ import com.carlink.ui.components.LoadingSpinner
 import com.carlink.ui.components.VideoSurface
 import com.carlink.ui.components.VideoSurfaceState
 import com.carlink.ui.components.rememberVideoSurfaceState
+import com.carlink.ui.settings.CarlinkSettings
+import com.carlink.ui.settings.DisplayModeSetting
 import com.carlink.ui.settings.PhonesTabContent
+import com.carlink.ui.settings.SettingsPanel
 import com.carlink.ui.theme.AutomotiveDimens
 import com.carlink.ui.theme.GlassButton
 import com.carlink.ui.theme.GlassShapes
@@ -102,7 +108,9 @@ import kotlin.coroutines.resume
 @Composable
 fun MainScreen(
     carlinkManager: CarlinkManager,
+    displayMode: DisplayModeSetting = DisplayModeSetting.DEFAULT,
     onResetConnection: (() -> Unit)? = null,
+    onApplySettings: (CarlinkSettings.Snapshot) -> Unit = {},
 ) {
     // Key state on carlinkManager identity — when the manager is replaced (Reset Connection
     // rebuild), all session-scoped state resets automatically, preventing stale callbacks /
@@ -111,6 +119,8 @@ fun MainScreen(
     var statusText by remember(carlinkManager) { mutableStateOf("Connect Adapter") }
     // True when the OEM "Exit" icon was pressed during a live session → overlay the dashboard.
     var showHostUi by remember(carlinkManager) { mutableStateOf(false) }
+    // Réglages panel (full-screen, above everything).
+    var showSettings by remember { mutableStateOf(false) }
     val surfaceState = rememberVideoSurfaceState()
 
     LaunchedEffect(connectionState) {
@@ -205,109 +215,140 @@ fun MainScreen(
     // Fullscreen-immersive: video fills the entire display behind the (hidden) system bars
     // and cutout. SafeArea (where CarPlay avoids placing UI) is emitted separately by
     // CarlinkManager/MessageSerializer, not from this file.
+    // Video area follows the display mode: pad by the system bars that remain visible
+    // (WindowInsets.systemBars only reports visible bars). Must match MainActivity's
+    // per-mode resolution computation.
+    val videoAreaModifier =
+        when (displayMode) {
+            DisplayModeSetting.FULLSCREEN -> Modifier.fillMaxSize()
+            DisplayModeSetting.BARS_VISIBLE ->
+                Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.systemBars)
+                    .windowInsetsPadding(WindowInsets.displayCutout)
+            DisplayModeSetting.STATUS_HIDDEN,
+            DisplayModeSetting.DOCK_HIDDEN,
+            -> Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars)
+        }
+
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        val density = LocalDensity.current
+        Box(modifier = videoAreaModifier) {
+            val density = LocalDensity.current
 
-        BoxWithConstraints(
-            modifier = Modifier.fillMaxSize().clipToBounds(),
-        ) {
-            // Track display-bounds for the adapter OPEN resolution.
-            val containerPx =
-                with(density) {
-                    IntSize(maxWidth.roundToPx(), maxHeight.roundToPx())
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxSize().clipToBounds(),
+            ) {
+                // Track display-bounds for the adapter OPEN resolution.
+                val containerPx =
+                    with(density) {
+                        IntSize(maxWidth.roundToPx(), maxHeight.roundToPx())
+                    }
+                LaunchedEffect(containerPx) {
+                    if (containerPx.width > 0 && containerPx.height > 0) {
+                        containerSize = containerPx
+                    }
                 }
-            LaunchedEffect(containerPx) {
-                if (containerPx.width > 0 && containerPx.height > 0) {
-                    containerSize = containerPx
-                }
-            }
 
-            // Key the VideoSurface on manager identity so a Reset Connection rebuild drops the
-            // AndroidView slot, disposing the old SurfaceView and releasing its HWC overlay plane;
-            // a fresh SurfaceView is then inflated against the current window rect.
-            key(carlinkManager) {
-                VideoSurface(
-                    modifier = Modifier.fillMaxSize(),
-                    onSurfaceAvailable = { surface, width, height ->
-                        logInfo("[UI_SURFACE] Surface available: ${width}x$height", tag = "UI")
-                        surfaceState.onSurfaceAvailable(surface, width, height)
-                    },
-                    onSurfaceDestroyed = {
-                        logInfo("[UI_SURFACE] Surface destroyed", tag = "UI")
-                        surfaceState.onSurfaceDestroyed()
-                        carlinkManager.onSurfaceDestroyed()
-                    },
-                    onSurfaceSizeChanged = { width, height ->
-                        logInfo("[UI_SURFACE] Surface size changed: ${width}x$height", tag = "UI")
-                        surfaceState.onSurfaceSizeChanged(width, height)
-                    },
-                    onTouchEvent = { event ->
-                        if (connectionState == CarlinkManager.State.STREAMING) {
-                            if (BuildConfig.DEBUG) {
-                                val now = System.currentTimeMillis()
-                                if (now - lastTouchTime > 1000) {
-                                    logDebug(
-                                        "[UI_TOUCH] touch: action=${event.actionMasked}" +
-                                            ", pointers=${event.pointerCount}" +
-                                            ", surface=${surfaceState.width}x${surfaceState.height}" +
-                                            ", container=${containerSize.width}x${containerSize.height}",
-                                        tag = "UI",
-                                    )
-                                    lastTouchTime = now
+                // Key the VideoSurface on manager identity so a Reset Connection rebuild drops the
+                // AndroidView slot, disposing the old SurfaceView and releasing its HWC overlay plane;
+                // a fresh SurfaceView is then inflated against the current window rect.
+                key(carlinkManager) {
+                    VideoSurface(
+                        modifier = Modifier.fillMaxSize(),
+                        onSurfaceAvailable = { surface, width, height ->
+                            logInfo("[UI_SURFACE] Surface available: ${width}x$height", tag = "UI")
+                            surfaceState.onSurfaceAvailable(surface, width, height)
+                        },
+                        onSurfaceDestroyed = {
+                            logInfo("[UI_SURFACE] Surface destroyed", tag = "UI")
+                            surfaceState.onSurfaceDestroyed()
+                            carlinkManager.onSurfaceDestroyed()
+                        },
+                        onSurfaceSizeChanged = { width, height ->
+                            logInfo("[UI_SURFACE] Surface size changed: ${width}x$height", tag = "UI")
+                            surfaceState.onSurfaceSizeChanged(width, height)
+                        },
+                        onTouchEvent = { event ->
+                            if (connectionState == CarlinkManager.State.STREAMING) {
+                                if (BuildConfig.DEBUG) {
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastTouchTime > 1000) {
+                                        logDebug(
+                                            "[UI_TOUCH] touch: action=${event.actionMasked}" +
+                                                ", pointers=${event.pointerCount}" +
+                                                ", surface=${surfaceState.width}x${surfaceState.height}" +
+                                                ", container=${containerSize.width}x${containerSize.height}",
+                                            tag = "UI",
+                                        )
+                                        lastTouchTime = now
+                                    }
                                 }
+                                handleTouchEvent(
+                                    event,
+                                    activeTouches,
+                                    carlinkManager,
+                                    surfaceState.width,
+                                    surfaceState.height,
+                                    containerSize.width,
+                                    containerSize.height,
+                                )
                             }
-                            handleTouchEvent(
-                                event,
-                                activeTouches,
-                                carlinkManager,
-                                surfaceState.width,
-                                surfaceState.height,
-                                containerSize.width,
-                                containerSize.height,
-                            )
-                        }
-                        true
-                    },
+                            true
+                        },
+                    )
+                }
+            }
+
+            // Frozen frosted-glass backdrop: the captured frame, blurred, drawn over the (now hidden)
+            // live SurfaceView and under the dashboard cards. Only present while overlaying a session
+            // and the PixelCopy succeeded; otherwise the live translucent bleedthrough shows.
+            if (overlayingSession) {
+                frostedBackdrop?.let { backdrop ->
+                    Image(
+                        bitmap = backdrop,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize().blur(SNAPSHOT_BLUR_RADIUS),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+            }
+
+            // Dashboard shows when idle, OR overlaid on a live session when the OEM "Exit" icon was
+            // pressed (showHostUi). When overlaying a session it gets a Return-to-CarPlay dismiss.
+            if (isLoading || showHostUi) {
+                CarlinkDashboard(
+                    carlinkManager = carlinkManager,
+                    statusText = statusText,
+                    onResetConnection = onResetConnection,
+                    onOpenSettings = { showSettings = true },
+                    onReturnToProjection =
+                        if (overlayingSession) {
+                            {
+                                showHostUi = false
+                                carlinkManager.recoverVideoFromOverlay()
+                            }
+                        } else {
+                            null
+                        },
                 )
+            }
+            // System back dismisses the host-UI overlay and returns to projection.
+            BackHandler(enabled = overlayingSession && !showSettings) {
+                showHostUi = false
+                carlinkManager.recoverVideoFromOverlay()
             }
         }
 
-        // Frozen frosted-glass backdrop: the captured frame, blurred, drawn over the (now hidden)
-        // live SurfaceView and under the dashboard cards. Only present while overlaying a session
-        // and the PixelCopy succeeded; otherwise the live translucent bleedthrough shows.
-        if (overlayingSession) {
-            frostedBackdrop?.let { backdrop ->
-                Image(
-                    bitmap = backdrop,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize().blur(SNAPSHOT_BLUR_RADIUS),
-                    contentScale = ContentScale.Crop,
-                )
-            }
-        }
-
-        // Dashboard shows when idle, OR overlaid on a live session when the OEM "Exit" icon was
-        // pressed (showHostUi). When overlaying a session it gets a Return-to-CarPlay dismiss.
-        if (isLoading || showHostUi) {
-            CarlinkDashboard(
-                carlinkManager = carlinkManager,
-                statusText = statusText,
-                onResetConnection = onResetConnection,
-                onReturnToProjection =
-                    if (overlayingSession) {
-                        {
-                            showHostUi = false
-                            carlinkManager.recoverVideoFromOverlay()
-                        }
-                    } else {
-                        null
-                    },
+        // Réglages — full screen, above the video and the dashboard.
+        if (showSettings) {
+            SettingsPanel(
+                onApply = { snapshot ->
+                    showSettings = false
+                    onApplySettings(snapshot)
+                },
+                onClose = { showSettings = false },
             )
-        }
-        // System back dismisses the host-UI overlay and returns to projection.
-        BackHandler(enabled = overlayingSession) {
-            showHostUi = false
-            carlinkManager.recoverVideoFromOverlay()
+            BackHandler { showSettings = false }
         }
     }
 }
@@ -315,7 +356,7 @@ fun MainScreen(
 // ==================== Dashboard ====================
 
 /** Landscape dashboard cards take this fraction of the available height (moderate, not full). */
-private const val CARD_HEIGHT_FRACTION = 0.6f
+private const val CARD_HEIGHT_FRACTION = 0.8f
 
 /** Landscape dashboard cards take this fraction of the available width, centered (not edge-to-edge). */
 private const val CARD_WIDTH_FRACTION = 0.7f
@@ -366,6 +407,7 @@ private fun CarlinkDashboard(
     carlinkManager: CarlinkManager,
     statusText: String,
     onResetConnection: (() -> Unit)?,
+    onOpenSettings: () -> Unit,
     onReturnToProjection: (() -> Unit)? = null,
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -417,6 +459,7 @@ private fun CarlinkDashboard(
                         Modifier.weight(0.24f).fillMaxHeight(),
                         stretchStatus = true,
                         onReturnToProjection = onReturnToProjection,
+                        onOpenSettings = onOpenSettings,
                     )
                     KnownDevicesCard(carlinkManager, Modifier.weight(0.76f).fillMaxHeight())
                 }
@@ -431,6 +474,7 @@ private fun CarlinkDashboard(
                         onResetConnection,
                         Modifier.fillMaxWidth(),
                         onReturnToProjection = onReturnToProjection,
+                        onOpenSettings = onOpenSettings,
                     )
                     KnownDevicesCard(carlinkManager, Modifier.fillMaxWidth())
                 }
@@ -472,6 +516,7 @@ private fun AdapterCard(
     // When non-null the top "Return to CarPlay" button is enabled and returns to projection;
     // otherwise the button is shown greyed-out/disabled as a permanent placeholder.
     onReturnToProjection: (() -> Unit)? = null,
+    onOpenSettings: () -> Unit = {},
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
@@ -532,8 +577,20 @@ private fun AdapterCard(
                 )
             }
 
-            // --- Controls: Reboot = glass (warning tint), Reset = solid vibrant accent (destructive) ---
+            // --- Controls: Réglages = glass (primary), Reboot = glass (warning tint),
+            // Reset = solid vibrant accent (destructive) ---
             Spacer(modifier = Modifier.height(16.dp))
+            GlassButton(
+                onClick = onOpenSettings,
+                contentColor = colorScheme.primary,
+                modifier = Modifier.fillMaxWidth().height(AutomotiveDimens.ButtonMinHeight),
+            ) {
+                Icon(imageVector = Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(24.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = "Réglages", style = MaterialTheme.typography.titleMedium)
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
             GlassButton(
                 onClick = { showRebootDialog = true },
                 enabled = !isProcessing,
