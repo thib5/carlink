@@ -679,15 +679,7 @@ class CarlinkManager(
                     }
 
                     override fun onStop() {
-                        // AAOS CarMediaService calls stop() on the previous media source every
-                        // time another source (e.g. the car's Bluetooth Audio mirroring the
-                        // iPhone) starts playing. Forwarding it as PAUSE made CarPlay music stop
-                        // ~2 s after starting when the phone was also on the car's Bluetooth.
-                        if (com.carlink.ui.settings.CarlinkSettings.ignoreSystemStopFlag()) {
-                            logInfo("[MEDIA] System stop() ignored (Bluetooth anti-cut fix)", tag = Logger.Tags.ADAPTR)
-                        } else {
-                            sendKey(CommandMapping.PAUSE)
-                        }
+                        sendKey(CommandMapping.PAUSE)
                     }
 
                     override fun onSkipToNext() {

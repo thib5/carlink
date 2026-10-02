@@ -229,6 +229,7 @@ class MainActivity : ComponentActivity() {
                             // fresh HWC plane, fresh WindowMetrics, renegotiated Open().
                             onResetConnection = { reinitialize() },
                             onApplySettings = { snapshot -> applySettings(snapshot) },
+                            onCloseApp = { closeApp() },
                         )
                     }
                 }
@@ -342,6 +343,17 @@ class MainActivity : ComponentActivity() {
                 safeLeft = cutoutInsets.left
                 safeRight = cutoutInsets.right
             }
+            DisplayModeSetting.FULLSCREEN_STATUS -> {
+                // Video fills the whole display; the (transparent) status bar stays on top of it.
+                // SafeArea keeps CarPlay's interactive UI out from under the bar while its
+                // wallpaper/background is drawn behind it (drawUIOutsideSafeArea=1).
+                areaWidth = bounds.width()
+                areaHeight = bounds.height()
+                safeTop = maxOf(cutoutInsets.top, statusInsets.top)
+                safeBottom = maxOf(cutoutInsets.bottom, statusInsets.bottom)
+                safeLeft = maxOf(cutoutInsets.left, statusInsets.left)
+                safeRight = maxOf(cutoutInsets.right, statusInsets.right)
+            }
             DisplayModeSetting.BARS_VISIBLE -> {
                 areaWidth = bounds.width() - systemBarInsets.left - systemBarInsets.right -
                     cutoutInsets.left - cutoutInsets.right
@@ -429,21 +441,29 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Persist new settings from the Réglages screen and apply them. App-side-only changes (the
-     * Bluetooth anti-cut toggles) apply live; anything the adapter must know about rebuilds the
-     * session with a FULL init so the new config is pushed to the adapter.
+     * "Fermer l'app": end the CarPlay session cleanly (graceful adapter teardown), drop the
+     * connection foreground notification and remove the task so the car returns to its home
+     * screen. The process (and the app-scope MediaSession owned by the media service) is left
+     * to the system so the car's media card keeps a valid token.
+     */
+    private fun closeApp() {
+        logWarn("[UI_ACTION] Close app requested", tag = "MAIN")
+        pendingReinitRunnable?.let { mainHandler.removeCallbacks(it) }
+        pendingReinitRunnable = null
+        carlinkManagerState.value = null
+        carlinkManager?.release()
+        carlinkManager = null
+        com.carlink.media.CarlinkMediaBrowserService.stopConnectionForeground(this)
+        finishAndRemoveTask()
+    }
+
+    /**
+     * Persist new settings from the Réglages screen and apply them: the session is rebuilt with a
+     * FULL init so the new config is pushed to the adapter.
      */
     private fun applySettings(new: CarlinkSettings.Snapshot) {
-        val old = settings.snapshot()
-        val wasDirty = settings.adapterConfigDirty
         if (!settings.apply(new)) {
             logInfo("[SETTINGS] No change", tag = "MAIN")
-            return
-        }
-        if (old.differsOnlyInAppSide(new)) {
-            // Nothing for the adapter — don't let this change force a needless FULL init.
-            settings.adapterConfigDirty = wasDirty
-            logInfo("[SETTINGS] App-side change applied live: $new", tag = "MAIN")
             return
         }
         logInfo("[SETTINGS] Applying $new — rebuilding session (FULL init)", tag = "MAIN")
@@ -638,7 +658,9 @@ class MainActivity : ComponentActivity() {
                 controller.hide(WindowInsetsCompat.Type.statusBars())
                 controller.show(WindowInsetsCompat.Type.navigationBars())
             }
-            DisplayModeSetting.DOCK_HIDDEN -> {
+            DisplayModeSetting.DOCK_HIDDEN,
+            DisplayModeSetting.FULLSCREEN_STATUS,
+            -> {
                 controller.hide(WindowInsetsCompat.Type.navigationBars())
                 controller.show(WindowInsetsCompat.Type.statusBars())
             }
@@ -689,11 +711,13 @@ fun CarlinkApp(
     displayMode: DisplayModeSetting = DisplayModeSetting.DEFAULT,
     onResetConnection: () -> Unit = {},
     onApplySettings: (CarlinkSettings.Snapshot) -> Unit = {},
+    onCloseApp: () -> Unit = {},
 ) {
     MainScreen(
         carlinkManager = carlinkManager,
         displayMode = displayMode,
         onResetConnection = onResetConnection,
         onApplySettings = onApplySettings,
+        onCloseApp = onCloseApp,
     )
 }
