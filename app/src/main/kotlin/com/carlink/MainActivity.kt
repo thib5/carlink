@@ -33,7 +33,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.carlink.logging.Logger
-import com.carlink.logging.logWarn
 import com.carlink.logging.logInfo
 import com.carlink.logging.logWarn
 import com.carlink.media.MediaSessionManager
@@ -43,6 +42,11 @@ import com.carlink.protocol.AdapterConfig
 import com.carlink.protocol.KnownDevices
 import com.carlink.ui.MainScreen
 import com.carlink.ui.settings.AdapterConfigPreference
+import com.carlink.ui.settings.AudioOutputSetting
+import com.carlink.ui.settings.CarlinkSettings
+import com.carlink.ui.settings.DisplayModeSetting
+import com.carlink.ui.settings.MicSourceSetting
+import com.carlink.ui.settings.WifiBandSetting
 import com.carlink.ui.theme.CarlinkTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -59,7 +63,7 @@ import java.nio.ByteOrder
  *  - Boot sequencing (logging → immersive → deferred CarlinkManager init) on the main thread.
  *  - Ownership of [CarlinkManager] (nullable to survive being destroyed before init completes).
  *  - Microphone runtime permission (denial is survivable).
- *  - Hardcoded fullscreen-immersive ([applyImmersive]) — no display-mode UI in this build.
+ *  - User display mode ([applyDisplayMode]) + zoom / audio / connection settings ([CarlinkSettings]).
  *  - In-place session rebuild via [reinitialize] (used by Reset Connection).
  *  - USB attach (onNewIntent, via manifest intent-filter) + detach (BroadcastReceiver)
  *    handling for faster disconnect detection than USB-transfer error paths provide.
@@ -106,6 +110,12 @@ class MainActivity : ComponentActivity() {
         }
     // Observable state for Compose — replacement triggers recomposition of CarlinkApp
     private val carlinkManagerState = mutableStateOf<CarlinkManager?>(null)
+
+    /** User settings (Réglages screen). Loaded in onCreate. */
+    private lateinit var settings: CarlinkSettings
+
+    /** Display mode currently applied to the window (drives the MainScreen inset padding). */
+    private val displayModeState = mutableStateOf(DisplayModeSetting.DEFAULT)
 
     // Pending reinit handler — tracked for cancellation on rapid Reset Connection taps
     private var pendingReinitRunnable: Runnable? = null
@@ -171,9 +181,13 @@ class MainActivity : ComponentActivity() {
         // Initialize logging
         initializeLogging()
 
-        // Hardcoded fullscreen-immersive (cp-stripped) — applied before computing display
-        // dimensions so the viewport uses the full screen.
-        applyImmersive()
+        // Load user settings (zoom, display mode, audio output, ...).
+        settings = CarlinkSettings.getInstance(this)
+        displayModeState.value = settings.displayMode
+
+        // Apply the user's display mode before computing display dimensions so the viewport
+        // matches the visible area.
+        applyDisplayMode(settings.displayMode)
 
         // Defer CarlinkManager creation to the next main-looper tick so the decorView is
         // attached before initializeCarlinkManager() reads insets. WindowMetricsCompat
@@ -204,14 +218,17 @@ class MainActivity : ComponentActivity() {
         // reinit triggers full recomposition without Activity restart.
         setContent {
             val manager = carlinkManagerState.value
+            val displayMode = displayModeState.value
             CarlinkTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     if (manager != null) {
                         CarlinkApp(
                             carlinkManager = manager,
+                            displayMode = displayMode,
                             // Reset Connection rebuilds the full manager: new SurfaceView,
                             // fresh HWC plane, fresh WindowMetrics, renegotiated Open().
                             onResetConnection = { reinitialize() },
+                            onApplySettings = { snapshot -> applySettings(snapshot) },
                         )
                     }
                 }
@@ -221,8 +238,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Re-assert immersive — the system may have shown bars while backgrounded.
-        applyImmersive()
+        // Re-assert the display mode — the system may have shown bars while backgrounded.
+        applyDisplayMode(displayModeState.value)
     }
 
     override fun onStart() {
@@ -293,17 +310,75 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun initializeCarlinkManager() {
+        val mode = settings.displayMode
+        val zoom = settings.zoomPercent
+
         // Window metrics (minSdk 32 → currentWindowMetrics is always available).
         val bounds = WindowMetricsCompat.displayBounds(windowManager)
         val windowInsets = WindowMetricsCompat.stableWindowInsets(windowManager)
         val cutoutInsets =
             windowInsets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.displayCutout())
+        val systemBarInsets =
+            windowInsets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+        val statusInsets =
+            windowInsets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars())
+        val navInsets =
+            windowInsets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.navigationBars())
 
-        // Fullscreen immersive (hardcoded): video fills the full display; system bars are
-        // hidden. SafeArea = display cutout insets (gminfo37 has none, so 0 there).
+        // Visible area for the video per display mode (must match MainScreen's inset padding:
+        // Compose WindowInsets.systemBars only reports the bars that are actually shown).
+        val areaWidth: Int
+        val areaHeight: Int
+        val safeTop: Int
+        val safeBottom: Int
+        val safeLeft: Int
+        val safeRight: Int
+        when (mode) {
+            DisplayModeSetting.FULLSCREEN -> {
+                areaWidth = bounds.width()
+                areaHeight = bounds.height()
+                safeTop = cutoutInsets.top
+                safeBottom = cutoutInsets.bottom
+                safeLeft = cutoutInsets.left
+                safeRight = cutoutInsets.right
+            }
+            DisplayModeSetting.BARS_VISIBLE -> {
+                areaWidth = bounds.width() - systemBarInsets.left - systemBarInsets.right -
+                    cutoutInsets.left - cutoutInsets.right
+                areaHeight = bounds.height() - systemBarInsets.top - systemBarInsets.bottom -
+                    cutoutInsets.top - cutoutInsets.bottom
+                safeTop = 0
+                safeBottom = 0
+                safeLeft = 0
+                safeRight = 0
+            }
+            DisplayModeSetting.STATUS_HIDDEN -> {
+                // Dock/nav bar stays → subtract it on every side it occupies.
+                areaWidth = bounds.width() - navInsets.left - navInsets.right
+                areaHeight = bounds.height() - navInsets.top - navInsets.bottom
+                safeTop = if (navInsets.top == 0) cutoutInsets.top else 0
+                safeBottom = if (navInsets.bottom == 0) cutoutInsets.bottom else 0
+                safeLeft = if (navInsets.left == 0) cutoutInsets.left else 0
+                safeRight = if (navInsets.right == 0) cutoutInsets.right else 0
+            }
+            DisplayModeSetting.DOCK_HIDDEN -> {
+                // Status bar stays → subtract it.
+                areaWidth = bounds.width() - statusInsets.left - statusInsets.right
+                areaHeight = bounds.height() - statusInsets.top - statusInsets.bottom
+                safeTop = if (statusInsets.top == 0) cutoutInsets.top else 0
+                safeBottom = if (statusInsets.bottom == 0) cutoutInsets.bottom else 0
+                safeLeft = if (statusInsets.left == 0) cutoutInsets.left else 0
+                safeRight = if (statusInsets.right == 0) cutoutInsets.right else 0
+            }
+        }
+
+        // Zoom: ask the phone for a smaller canvas (area / zoom) that the head unit scales up to
+        // fill the visible area → CarPlay icons/text appear zoom% bigger. DPI is left at the
+        // panel's real density on purpose (same CarPlay render scale, smaller canvas).
         val dpi = resources.displayMetrics.densityDpi
-        val configWidth = bounds.width() and 1.inv() // even for H.264 macroblock alignment
-        val configHeight = bounds.height() and 1.inv()
+        val configWidth = (areaWidth * 100 / zoom) and 1.inv() // even for H.264 alignment
+        val configHeight = (areaHeight * 100 / zoom) and 1.inv()
+        fun scaleInset(px: Int): Int = px * 100 / zoom
 
         // ViewArea/SafeArea binary blobs for the adapter (safeArea ⊆ viewArea ⊆ display).
         val viewAreaData = buildViewAreaData(configWidth, configHeight)
@@ -311,20 +386,24 @@ class MainActivity : ComponentActivity() {
             buildSafeAreaData(
                 configWidth,
                 configHeight,
-                cutoutInsets.top,
-                cutoutInsets.bottom,
-                cutoutInsets.left,
-                cutoutInsets.right,
+                scaleInset(safeTop),
+                scaleInset(safeBottom),
+                scaleInset(safeLeft),
+                scaleInset(safeRight),
             )
 
-        // Hardcoded adapter config (cp-stripped): adapter audio, 48kHz, app mic, 5GHz, 60fps,
-        // 1000ms media delay, LHD. AdapterConfig defaults bake the rest.
+        val audioViaBluetooth = settings.audioOutput == AudioOutputSetting.BLUETOOTH
         val config =
             AdapterConfig(
                 width = configWidth,
                 height = configHeight,
-                fps = 60,
+                fps = settings.fps,
                 dpi = dpi,
+                mediaDelay = settings.mediaDelayMs,
+                audioTransferMode = audioViaBluetooth,
+                wifiType = if (settings.wifiBand == WifiBandSetting.BAND_24GHZ) "24ghz" else "5ghz",
+                micType = if (settings.micSource == MicSourceSetting.PHONE) "box" else "os",
+                handDriveMode = settings.handDrive.value,
                 // Show the CarPlay OEM "Exit" host-UI icon (airplay.conf oemIconVisible=1).
                 oemIconVisible = true,
                 viewAreaData = viewAreaData,
@@ -332,17 +411,44 @@ class MainActivity : ComponentActivity() {
             )
 
         logInfo(
-            "[WINDOW] Bounds: ${bounds.width()}x${bounds.height()}, Video: ${configWidth}x$configHeight, " +
+            "[WINDOW] mode=${mode.key} zoom=$zoom% Bounds: ${bounds.width()}x${bounds.height()}, " +
+                "Area: ${areaWidth}x$areaHeight, Video: ${configWidth}x$configHeight, " +
                 "Cutout: T:${cutoutInsets.top} B:${cutoutInsets.bottom} L:${cutoutInsets.left} R:${cutoutInsets.right}",
             tag = "MAIN",
         )
-        logInfo("Display config: ${config.width}x${config.height}@${config.fps}fps, ${config.dpi}dpi", tag = "MAIN")
+        logInfo(
+            "Display config: ${config.width}x${config.height}@${config.fps}fps, ${config.dpi}dpi, " +
+                "audio=${if (audioViaBluetooth) "BLUETOOTH" else "ADAPTER"}, delay=${config.mediaDelay}ms",
+            tag = "MAIN",
+        )
 
-        // Adapter audio mode (hardcoded false) — acquire the app-scope MediaSession singleton.
-        applyAudioTransferModeToMediaSession(false)
+        applyAudioTransferModeToMediaSession(audioViaBluetooth)
 
         carlinkManager = CarlinkManager(this, config, mediaSessionManager)
         carlinkManagerState.value = carlinkManager
+    }
+
+    /**
+     * Persist new settings from the Réglages screen and apply them. App-side-only changes (the
+     * Bluetooth anti-cut toggles) apply live; anything the adapter must know about rebuilds the
+     * session with a FULL init so the new config is pushed to the adapter.
+     */
+    private fun applySettings(new: CarlinkSettings.Snapshot) {
+        val old = settings.snapshot()
+        val wasDirty = settings.adapterConfigDirty
+        if (!settings.apply(new)) {
+            logInfo("[SETTINGS] No change", tag = "MAIN")
+            return
+        }
+        if (old.differsOnlyInAppSide(new)) {
+            // Nothing for the adapter — don't let this change force a needless FULL init.
+            settings.adapterConfigDirty = wasDirty
+            logInfo("[SETTINGS] App-side change applied live: $new", tag = "MAIN")
+            return
+        }
+        logInfo("[SETTINGS] Applying $new — rebuilding session (FULL init)", tag = "MAIN")
+        displayModeState.value = new.displayMode
+        reinitialize()
     }
 
     /**
@@ -439,8 +545,8 @@ class MainActivity : ComponentActivity() {
             logInfo("[REINIT] Old CarlinkManager released", tag = "MAIN")
         }
 
-        // 2. Re-assert immersive.
-        applyImmersive()
+        // 2. Re-assert the (possibly new) display mode.
+        applyDisplayMode(settings.displayMode)
 
         // 3. Rebuild after the system-bar/WindowMetrics transition settles (200ms).
         val reinitRunnable = Runnable {
@@ -506,20 +612,39 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Applies fullscreen-immersive: hide system bars, draw edge-to-edge into the cutout,
-     * and reveal bars transiently on swipe. Hardcoded — this build has no display-mode UI.
+     * Apply the user's display mode to the window: which AAOS system bars (top status bar,
+     * dock/navigation bar) stay visible around CarPlay. The window always draws edge-to-edge;
+     * MainScreen pads the video by the bars that remain visible.
      */
-    private fun applyImmersive() {
-        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
+    private fun applyDisplayMode(mode: DisplayModeSetting) {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
         val lp = window.attributes
-        // Draw edge-to-edge into the cutout (gminfo3.7 has none, so this is a no-op there).
-        lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-        window.attributes = lp
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
-        windowInsetsController.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        logInfo("[DISPLAY] Applied fullscreen-immersive", tag = "MAIN")
+        lp.layoutInDisplayCutoutMode =
+            if (mode == DisplayModeSetting.BARS_VISIBLE) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            }
+        window.attributes = lp
+        when (mode) {
+            DisplayModeSetting.FULLSCREEN -> {
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            }
+            DisplayModeSetting.BARS_VISIBLE -> {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+            DisplayModeSetting.STATUS_HIDDEN -> {
+                controller.hide(WindowInsetsCompat.Type.statusBars())
+                controller.show(WindowInsetsCompat.Type.navigationBars())
+            }
+            DisplayModeSetting.DOCK_HIDDEN -> {
+                controller.hide(WindowInsetsCompat.Type.navigationBars())
+                controller.show(WindowInsetsCompat.Type.statusBars())
+            }
+        }
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        logInfo("[DISPLAY] Applied display mode ${mode.key}", tag = "MAIN")
     }
 
     /**
@@ -561,10 +686,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun CarlinkApp(
     carlinkManager: CarlinkManager,
+    displayMode: DisplayModeSetting = DisplayModeSetting.DEFAULT,
     onResetConnection: () -> Unit = {},
+    onApplySettings: (CarlinkSettings.Snapshot) -> Unit = {},
 ) {
     MainScreen(
         carlinkManager = carlinkManager,
+        displayMode = displayMode,
         onResetConnection = onResetConnection,
+        onApplySettings = onApplySettings,
     )
 }
