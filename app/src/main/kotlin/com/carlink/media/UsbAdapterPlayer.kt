@@ -320,7 +320,14 @@ class UsbAdapterPlayer(
             // REMOTE — "started or paused because of a remote change" — is the correct
             // reason for a mirror Player driven by external transport state (the phone
             // over USB). USER_REQUEST is reserved for local setPlayWhenReady calls.
-            .setPlayWhenReady(snapshot.isPlaying, Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE)
+            // Bluetooth anti-cut fix #2 ("discreet" session): never report PLAYING to the car so
+            // AAOS CarMediaService never makes Carlink the active source — it then never calls
+            // stop() on the car's Bluetooth source, which the car relays to the iPhone as an
+            // AVRCP pause. Audio itself is unaffected (it plays from our own AudioTracks).
+            .setPlayWhenReady(
+                snapshot.isPlaying && !com.carlink.ui.settings.CarlinkSettings.discreetMediaSessionFlag(),
+                Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE,
+            )
             .setPlaybackState(snapshot.playbackState)
             .setContentPositionMs(snapshot.positionMs)
             .setIsLoading(snapshot.playbackState == Player.STATE_BUFFERING)

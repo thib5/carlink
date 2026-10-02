@@ -102,6 +102,9 @@ class CarlinkMediaBrowserService : MediaLibraryService() {
         instance = this
         createNotificationChannel()
         if (BuildConfig.DEBUG) Log.d(TAG, "[BROWSER_SERVICE] onCreate")
+        // Load user settings early (the MBS starts at boot, before MainActivity) so the
+        // Bluetooth anti-cut flags read by the player/session are correct from the start.
+        com.carlink.ui.settings.CarlinkSettings.getInstance(applicationContext)
         MediaSessionManager.getOrCreate(applicationContext, serviceLogCallback).initialize()
     }
 
