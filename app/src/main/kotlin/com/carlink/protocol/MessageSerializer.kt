@@ -318,7 +318,8 @@ object MessageSerializer {
      *   `/tmp` (firmware-repopulated from flash ScreenDPI); ViewArea/SafeArea + the full block
      *   are `/etc` flash. The wireless connect itself is triggered separately by the
      *   wifiConnect (1002) timer + the persisted NeedAutoConnect flag.
-     * - MINIMAL_ONLY (recognized, already-staged adapter): WIFI_ENABLE only.
+     * - MINIMAL_ONLY (recognized, already-staged adapter): per-session refresh ([addSessionRefresh])
+ *   then WIFI_ENABLE.
      *
      * @param config Adapter configuration (hardcoded in this build)
      * @param initMode "FULL" or "MINIMAL_ONLY"
@@ -338,11 +339,50 @@ object MessageSerializer {
                 messages.add(serializeFile(FileAddress.HU_SAFEAREA_INFO.path, it))
             }
             addFullSettings(messages, config)
+        } else {
+            addSessionRefresh(messages, config)
         }
 
         // WiFi Enable LAST — activates wireless mode after config.
         messages.add(serializeCommand(CommandMapping.WIFI_ENABLE))
         return messages
+    }
+
+    /**
+     * Per-session refresh for MINIMAL inits (every connection after the first FULL).
+     *
+     * The cp-stripped build originally sent only OPEN + WIFI_ENABLE here. That works on a freshly
+     * powered adapter, but NOT after a soft restart (phone drop mid-drive → restart() sends
+     * DisconnectPhone + CloseDongle, then OPEN): CloseDongle runs the firmware's full-stop path,
+     * which resets per-session state, and without a fresh BoxSettings the adapter would not
+     * resume its auto-connect — the only way back was to unplug the adapter. Release 145 re-sent
+     * DPI / BoxSettings / ViewArea / SafeArea on every session and did not have this problem.
+     *
+     * Restores that per-session set, plus the AirPlay config (firmware may rewrite airplay.conf
+     * while processing BoxSettings, so it must follow it) and the mic / audio-transfer commands
+     * (both reset to defaults on disconnect). Deliberately NOT re-sent: hand-drive, box name,
+     * charge mode and the WiFi band command (band switch restarts the adapter's access point).
+     */
+    private fun addSessionRefresh(
+        messages: MutableList<ByteArray>,
+        config: AdapterConfig,
+    ) {
+        messages.add(serializeNumber(config.dpi, FileAddress.DPI))
+        config.viewAreaData?.let {
+            messages.add(serializeFile(FileAddress.HU_VIEWAREA_INFO.path, it))
+        }
+        config.safeAreaData?.let {
+            messages.add(serializeFile(FileAddress.HU_SAFEAREA_INFO.path, it))
+        }
+        messages.add(serializeBoxSettings(config))
+        messages.add(serializeString(generateAirplayConfig(config), FileAddress.AIRPLAY_CONFIG))
+        val micCommand = if (config.micType == "box") CommandMapping.BOX_MIC else CommandMapping.MIC
+        messages.add(serializeCommand(micCommand))
+        messages.add(
+            serializeCommand(
+                if (config.audioTransferMode) CommandMapping.AUDIO_TRANSFER_ON else CommandMapping.AUDIO_TRANSFER_OFF,
+            ),
+        )
     }
 
     /**
