@@ -554,6 +554,8 @@ data class AdapterConfig(
     val viewAreaData: ByteArray? = null,
     /** SafeArea binary data (20B) for adapter — always sent */
     val safeAreaData: ByteArray? = null,
+    /** Custom PNG for the CarPlay OEM ("Controls") button; null keeps the adapter's default icon. */
+    val oemIconData: ByteArray? = null,
 ) {
     companion object {
         val DEFAULT = AdapterConfig()
