@@ -388,6 +388,15 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // User edge margins (Réglages > Affichage > Marges): the GM panel has curved/rounded
+        // edges that physically cut the picture. Margins are added to the SafeArea so CarPlay
+        // keeps its buttons/text inside, while drawUIOutsideSafeArea=1 lets its wallpaper still
+        // run to the very edge (no black bars).
+        val edgeLeft = safeLeft + areaWidth * settings.marginLeftPercent / 100
+        val edgeRight = safeRight + areaWidth * settings.marginRightPercent / 100
+        val edgeTop = safeTop + areaHeight * settings.marginTopPercent / 100
+        val edgeBottom = safeBottom + areaHeight * settings.marginBottomPercent / 100
+
         // Zoom: ask the phone for a smaller canvas (area / zoom) that the head unit scales up to
         // fill the visible area → CarPlay icons/text appear zoom% bigger. DPI is left at the
         // panel's real density on purpose (same CarPlay render scale, smaller canvas).
@@ -402,10 +411,10 @@ class MainActivity : ComponentActivity() {
             buildSafeAreaData(
                 configWidth,
                 configHeight,
-                scaleInset(safeTop),
-                scaleInset(safeBottom),
-                scaleInset(safeLeft),
-                scaleInset(safeRight),
+                scaleInset(edgeTop),
+                scaleInset(edgeBottom),
+                scaleInset(edgeLeft),
+                scaleInset(edgeRight),
             )
 
         val audioViaBluetooth = settings.audioOutput == AudioOutputSetting.BLUETOOTH
@@ -430,7 +439,8 @@ class MainActivity : ComponentActivity() {
         logInfo(
             "[WINDOW] mode=${mode.key} zoom=$zoom% Bounds: ${bounds.width()}x${bounds.height()}, " +
                 "Area: ${areaWidth}x$areaHeight, Video: ${configWidth}x$configHeight, " +
-                "Cutout: T:${cutoutInsets.top} B:${cutoutInsets.bottom} L:${cutoutInsets.left} R:${cutoutInsets.right}",
+                "Cutout: T:${cutoutInsets.top} B:${cutoutInsets.bottom} L:${cutoutInsets.left} R:${cutoutInsets.right}, " +
+                "Safe: T:$edgeTop B:$edgeBottom L:$edgeLeft R:$edgeRight",
             tag = "MAIN",
         )
         logInfo(
