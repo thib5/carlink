@@ -296,6 +296,19 @@ private fun DisplaySection(
         }
     }
 
+    SettingGroup(
+        title = "Marges (bords arrondis de l'écran)",
+        hint = "Si le bord de l'écran coupe CarPlay, ajoute une marge de ce côté. " +
+            "Les boutons de CarPlay se placent à l'intérieur, le fond continue jusqu'au bord.",
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            MarginStepper("Gauche", draft.marginLeft) { onChange(draft.copy(marginLeft = it)) }
+            MarginStepper("Droite", draft.marginRight) { onChange(draft.copy(marginRight = it)) }
+            MarginStepper("Haut", draft.marginTop) { onChange(draft.copy(marginTop = it)) }
+            MarginStepper("Bas", draft.marginBottom) { onChange(draft.copy(marginBottom = it)) }
+        }
+    }
+
     SettingGroup(title = "Fluidité de l'image") {
         PillRow(
             options = listOf(60 to "60 images/s (fluide)", 30 to "30 images/s (économie)"),
@@ -452,6 +465,35 @@ private fun ZoomPreview(zoom: Int) {
             style = MaterialTheme.typography.labelLarge,
             color = Color.White.copy(alpha = 0.6f),
         )
+    }
+}
+
+/** One side's edge margin: label, −/+ (1 %) and the value. */
+@Composable
+private fun MarginStepper(
+    label: String,
+    value: Int,
+    onValue: (Int) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            label,
+            modifier = Modifier.width(120.dp),
+            style = MaterialTheme.typography.titleLarge,
+            color = colors.onSurface,
+        )
+        StepButton("−", enabled = value > 0) { onValue((value - 1).coerceAtLeast(0)) }
+        Text(
+            if (value == 0) "Aucune" else "$value %",
+            modifier = Modifier.width(130.dp),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+            color = if (value == 0) colors.onSurfaceVariant else colors.primary,
+        )
+        StepButton("+", enabled = value < CarlinkSettings.MAX_MARGIN) {
+            onValue((value + 1).coerceAtMost(CarlinkSettings.MAX_MARGIN))
+        }
     }
 }
 

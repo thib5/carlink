@@ -46,6 +46,27 @@ class CarlinkSettings private constructor(
         get() = HandDriveSetting.fromValue(prefs.getInt(KEY_HAND_DRIVE, HandDriveSetting.LEFT.value))
         set(value) = prefs.edit { putInt(KEY_HAND_DRIVE, value.value) }
 
+    /**
+     * Edge margins (percent of the visible width/height, per side). The GM panel's corners/edges
+     * are curved and physically cut the picture; these grow CarPlay's SafeArea so its UI stays
+     * inside while the wallpaper still reaches the edge.
+     */
+    var marginLeftPercent: Int
+        get() = prefs.getInt(KEY_MARGIN_LEFT, 0).coerceIn(0, MAX_MARGIN)
+        set(value) = prefs.edit { putInt(KEY_MARGIN_LEFT, value.coerceIn(0, MAX_MARGIN)) }
+
+    var marginRightPercent: Int
+        get() = prefs.getInt(KEY_MARGIN_RIGHT, 0).coerceIn(0, MAX_MARGIN)
+        set(value) = prefs.edit { putInt(KEY_MARGIN_RIGHT, value.coerceIn(0, MAX_MARGIN)) }
+
+    var marginTopPercent: Int
+        get() = prefs.getInt(KEY_MARGIN_TOP, 0).coerceIn(0, MAX_MARGIN)
+        set(value) = prefs.edit { putInt(KEY_MARGIN_TOP, value.coerceIn(0, MAX_MARGIN)) }
+
+    var marginBottomPercent: Int
+        get() = prefs.getInt(KEY_MARGIN_BOTTOM, 0).coerceIn(0, MAX_MARGIN)
+        set(value) = prefs.edit { putInt(KEY_MARGIN_BOTTOM, value.coerceIn(0, MAX_MARGIN)) }
+
     // ==================== Son ====================
 
     var audioOutput: AudioOutputSetting
@@ -95,6 +116,10 @@ class CarlinkSettings private constructor(
             mediaDelayMs = mediaDelayMs,
             micSource = micSource,
             wifiBand = wifiBand,
+            marginLeft = marginLeftPercent,
+            marginRight = marginRightPercent,
+            marginTop = marginTopPercent,
+            marginBottom = marginBottomPercent,
         )
 
     /** Persist a full snapshot in one go. Returns true if anything changed. */
@@ -110,6 +135,10 @@ class CarlinkSettings private constructor(
             putInt(KEY_MEDIA_DELAY, new.mediaDelayMs)
             putString(KEY_MIC_SOURCE, new.micSource.key)
             putString(KEY_WIFI_BAND, new.wifiBand.key)
+            putInt(KEY_MARGIN_LEFT, new.marginLeft.coerceIn(0, MAX_MARGIN))
+            putInt(KEY_MARGIN_RIGHT, new.marginRight.coerceIn(0, MAX_MARGIN))
+            putInt(KEY_MARGIN_TOP, new.marginTop.coerceIn(0, MAX_MARGIN))
+            putInt(KEY_MARGIN_BOTTOM, new.marginBottom.coerceIn(0, MAX_MARGIN))
             putBoolean(KEY_DIRTY, true)
         }
         return true
@@ -124,6 +153,10 @@ class CarlinkSettings private constructor(
         val mediaDelayMs: Int,
         val micSource: MicSourceSetting,
         val wifiBand: WifiBandSetting,
+        val marginLeft: Int = 0,
+        val marginRight: Int = 0,
+        val marginTop: Int = 0,
+        val marginBottom: Int = 0,
     )
 
     companion object {
@@ -137,6 +170,10 @@ class CarlinkSettings private constructor(
         private const val KEY_MEDIA_DELAY = "media_delay_ms"
         private const val KEY_MIC_SOURCE = "mic_source"
         private const val KEY_WIFI_BAND = "wifi_band"
+        private const val KEY_MARGIN_LEFT = "margin_left_percent"
+        private const val KEY_MARGIN_RIGHT = "margin_right_percent"
+        private const val KEY_MARGIN_TOP = "margin_top_percent"
+        private const val KEY_MARGIN_BOTTOM = "margin_bottom_percent"
         private const val KEY_DIRTY = "adapter_config_dirty"
 
         const val MIN_ZOOM = 100
@@ -145,6 +182,9 @@ class CarlinkSettings private constructor(
 
         /** Zoom presets shown as big buttons (percent). */
         val ZOOM_PRESETS = listOf(100, 125, 150, 175, 200)
+
+        /** Max edge margin per side (percent). */
+        const val MAX_MARGIN = 15
 
         const val DEFAULT_MEDIA_DELAY = 500
         val MEDIA_DELAY_OPTIONS = listOf(300, 500, 1000, 2000)
