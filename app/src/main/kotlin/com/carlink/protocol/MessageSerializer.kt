@@ -12,8 +12,15 @@ import java.nio.charset.StandardCharsets
  * Handles header generation, payload encoding, and type-specific serialization.
  */
 object MessageSerializer {
-    /** Our own OEM-button icon file on the adapter (factory /etc/oem_icon.png stays untouched). */
-    private const val CUSTOM_OEM_ICON_PATH = "/etc/carlink_oem_icon.png"
+    /**
+     * Our own OEM-button icon file on the adapter (factory /etc/oem_icon.png stays untouched).
+     * The file name carries a CRC of the image: the adapter/iPhone cache the icon by path, so a
+     * new image under the old name kept showing the old one. A new name forces a reload.
+     */
+    private fun customOemIconPath(data: ByteArray): String {
+        val crc = java.util.zip.CRC32().apply { update(data) }.value
+        return "/etc/carlink_oem_%08x.png".format(crc)
+    }
 
     /**
      * Create a protocol header for the given message type and payload length.
@@ -300,7 +307,7 @@ object MessageSerializer {
      */
     fun generateAirplayConfig(config: AdapterConfig): String {
         val visible = if (config.oemIconVisible) "1" else "0"
-        val iconPath = if (config.oemIconData != null) CUSTOM_OEM_ICON_PATH else "/etc/oem_icon.png"
+        val iconPath = config.oemIconData?.let { customOemIconPath(it) } ?: "/etc/oem_icon.png"
         return "oemIconVisible = $visible\nname = AutoBox\n" +
             "model = Magic-Car-Link-1.00\n" +
             "oemIconPath = $iconPath\n" +
@@ -417,7 +424,7 @@ object MessageSerializer {
         // Custom OEM button icon, written to its own file (the adapter's factory oem_icon.png is
         // left untouched) BEFORE the AirPlay config that points oemIconPath at it. FULL only —
         // it persists in /etc flash, so MINIMAL sessions keep referencing it.
-        config.oemIconData?.let { messages.add(serializeFile(CUSTOM_OEM_ICON_PATH, it)) }
+        config.oemIconData?.let { messages.add(serializeFile(customOemIconPath(it), it)) }
 
         // AirPlay configuration AFTER BoxSettings (persists oemIconVisible/oemIconLabel).
         messages.add(serializeString(generateAirplayConfig(config), FileAddress.AIRPLAY_CONFIG))
