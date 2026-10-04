@@ -311,6 +311,40 @@ private fun DisplaySection(
             onSelect = { onChange(draft.copy(handDrive = it)) },
         )
     }
+
+    ScreenDiagnostics()
+}
+
+/** Small technical readout of the window geometry (helps diagnose reserved screen areas). */
+@Composable
+private fun ScreenDiagnostics() {
+    val context = LocalContext.current
+    val text =
+        remember {
+            try {
+                val wm = context.getSystemService(android.view.WindowManager::class.java)
+                val cur = wm.currentWindowMetrics
+                val max = wm.maximumWindowMetrics
+                val ins = androidx.core.view.WindowInsetsCompat.toWindowInsetsCompat(cur.windowInsets)
+                fun f(t: Int): String {
+                    val i = ins.getInsetsIgnoringVisibility(t)
+                    return "${i.left}/${i.top}/${i.right}/${i.bottom}"
+                }
+                "Fenêtre ${cur.bounds.width()}×${cur.bounds.height()} @${cur.bounds.left},${cur.bounds.top} · " +
+                    "Max ${max.bounds.width()}×${max.bounds.height()} · " +
+                    "Encoche ${f(androidx.core.view.WindowInsetsCompat.Type.displayCutout())} · " +
+                    "Barre haut ${f(androidx.core.view.WindowInsetsCompat.Type.statusBars())} · " +
+                    "Dock ${f(androidx.core.view.WindowInsetsCompat.Type.navigationBars())} · " +
+                    "dpi ${context.resources.displayMetrics.densityDpi}"
+            } catch (e: Exception) {
+                "Diagnostic indisponible: ${e.message}"
+            }
+        }
+    Text(
+        "Infos écran (G/H/D/B) : $text",
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /**
