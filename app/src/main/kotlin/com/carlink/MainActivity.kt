@@ -336,12 +336,15 @@ class MainActivity : ComponentActivity() {
         val safeRight: Int
         when (mode) {
             DisplayModeSetting.FULLSCREEN -> {
+                // True full screen: no SafeArea at all. Car panels have no physical notch, but GM
+                // AAOS reports the top-bar band as a display "cutout"; honoring it made CarPlay
+                // keep that band empty (wallpaper only) even with the bar hidden.
                 areaWidth = bounds.width()
                 areaHeight = bounds.height()
-                safeTop = cutoutInsets.top
-                safeBottom = cutoutInsets.bottom
-                safeLeft = cutoutInsets.left
-                safeRight = cutoutInsets.right
+                safeTop = 0
+                safeBottom = 0
+                safeLeft = 0
+                safeRight = 0
             }
             DisplayModeSetting.FULLSCREEN_STATUS -> {
                 // Video fills the whole display; the (transparent) status bar stays on top of it.
@@ -368,19 +371,20 @@ class MainActivity : ComponentActivity() {
                 // Dock/nav bar stays → subtract it on every side it occupies.
                 areaWidth = bounds.width() - navInsets.left - navInsets.right
                 areaHeight = bounds.height() - navInsets.top - navInsets.bottom
-                safeTop = if (navInsets.top == 0) cutoutInsets.top else 0
-                safeBottom = if (navInsets.bottom == 0) cutoutInsets.bottom else 0
-                safeLeft = if (navInsets.left == 0) cutoutInsets.left else 0
-                safeRight = if (navInsets.right == 0) cutoutInsets.right else 0
+                // No SafeArea: the hidden status-bar band is fully usable by CarPlay.
+                safeTop = 0
+                safeBottom = 0
+                safeLeft = 0
+                safeRight = 0
             }
             DisplayModeSetting.DOCK_HIDDEN -> {
                 // Status bar stays → subtract it.
                 areaWidth = bounds.width() - statusInsets.left - statusInsets.right
                 areaHeight = bounds.height() - statusInsets.top - statusInsets.bottom
-                safeTop = if (statusInsets.top == 0) cutoutInsets.top else 0
-                safeBottom = if (statusInsets.bottom == 0) cutoutInsets.bottom else 0
-                safeLeft = if (statusInsets.left == 0) cutoutInsets.left else 0
-                safeRight = if (statusInsets.right == 0) cutoutInsets.right else 0
+                safeTop = 0
+                safeBottom = 0
+                safeLeft = 0
+                safeRight = 0
             }
         }
 
