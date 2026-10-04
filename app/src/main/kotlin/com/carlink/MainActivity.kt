@@ -422,6 +422,7 @@ class MainActivity : ComponentActivity() {
                 handDriveMode = settings.handDrive.value,
                 // Show the CarPlay OEM "Exit" host-UI icon (airplay.conf oemIconVisible=1).
                 oemIconVisible = true,
+                oemIconData = loadOemIcon(),
                 viewAreaData = viewAreaData,
                 safeAreaData = safeAreaData,
             )
@@ -584,6 +585,15 @@ class MainActivity : ComponentActivity() {
         pendingReinitRunnable = reinitRunnable
         mainHandler.postDelayed(reinitRunnable, 200)
     }
+
+    /** Custom CarPlay "Controls" button icon (res/raw), or null to keep the adapter default. */
+    private fun loadOemIcon(): ByteArray? =
+        try {
+            resources.openRawResource(R.raw.carlink_oem_icon).use { it.readBytes() }
+        } catch (e: Exception) {
+            logWarn("[ICON] Custom OEM icon unavailable: ${e.message}", tag = "MAIN")
+            null
+        }
 
     /** Build HU_VIEWAREA_INFO (24 bytes): [screen_w, screen_h, view_w, view_h, originX, originY] */
     private fun buildViewAreaData(
