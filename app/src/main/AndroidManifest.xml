@@ -39,9 +39,9 @@
         android:appCategory="audio"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/ic_launcher_bt"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_bt"
         android:supportsRtl="true"
         android:theme="@style/Theme.CarlinkNative"
         tools:targetApi="35">
@@ -56,10 +56,8 @@
             android:theme="@style/Theme.CarlinkNative.Fullscreen"
             android:windowSoftInputMode="adjustResize">
 
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
+            <!-- LAUNCHER entry lives on the CarlinkLauncher alias below (new component name so
+                 the GM app grid builds a fresh icon instead of its cached old one). -->
 
             <!-- Separate CAR_MODE filter for automotive launchers -->
             <intent-filter>
@@ -88,6 +86,23 @@
                 android:value="true" />
         </activity>
 
+        <!-- App-grid entry. A new component name + new icon resource forces the car launcher,
+             which kept showing the old cached icon even after reinstalling, to load the new one. -->
+        <activity-alias
+            android:name=".CarlinkLauncher"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_bt"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="distractionOptimized"
+                android:value="true" />
+        </activity-alias>
+
         <!-- Media3 MediaLibraryService for AAOS Integration.
              Dual intent-filter: the modern `androidx.media3.session.MediaLibraryService`
              action for Media3-aware controllers, and the legacy
@@ -99,6 +114,7 @@
         <service
             android:name=".media.CarlinkMediaBrowserService"
             android:exported="true"
+            android:icon="@mipmap/ic_launcher_bt"
             android:foregroundServiceType="mediaPlayback|connectedDevice"
             tools:ignore="ExportedService">
             <intent-filter>
