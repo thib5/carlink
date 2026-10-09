@@ -208,7 +208,7 @@ class CarlinkMediaBrowserService : MediaLibraryService() {
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle(currentTitle ?: "Carlink")
             .setContentText(currentArtist ?: "Adapter connected")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.mipmap.ic_launcher_bt)
             .setOngoing(true)
             .setSilent(true)
             .setShowWhen(false)
