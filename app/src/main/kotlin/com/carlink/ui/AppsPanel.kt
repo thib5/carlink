@@ -1,5 +1,6 @@
 package com.carlink.ui
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
@@ -46,6 +47,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,6 +83,21 @@ enum class CarApp(
     DEVICES("Appareils", Icons.Default.PhoneIphone, listOf(Color(0xFF6EE7A0), Color(0xFF28B463))),
 }
 
+/** Last app shown + when the panel closed (process memory; a reboot just shows the menu). */
+private object PanelMemory {
+    private const val REOPEN_WINDOW_MS = 3 * 60 * 1000L
+    private var lastApp: CarApp? = null
+    private var closedAt = 0L
+
+    fun remember(app: CarApp?) {
+        lastApp = app
+        closedAt = SystemClock.elapsedRealtime()
+    }
+
+    fun appToReopen(): CarApp? =
+        lastApp?.takeIf { closedAt > 0 && SystemClock.elapsedRealtime() - closedAt < REOPEN_WINDOW_MS }
+}
+
 private val SettingsColors = listOf(Color(0xFFA0A4AE), Color(0xFF5B5F68))
 private val HomeColors = listOf(Color(0xFF3A3F4B), Color(0xFF22252D))
 
@@ -96,7 +114,12 @@ fun AppsPanel(
 ) {
     val ctx = LocalContext.current
     val settings = remember { CarlinkSettings.getInstance(ctx) }
-    var current by rememberSaveable { mutableStateOf<CarApp?>(null) }
+    // Reopen the last app if the panel was closed less than 3 minutes ago, otherwise the menu.
+    var current by rememberSaveable { mutableStateOf(PanelMemory.appToReopen()) }
+    val latestApp by rememberUpdatedState(current)
+    DisposableEffect(Unit) {
+        onDispose { PanelMemory.remember(latestApp) }
+    }
     var expanded by rememberSaveable { mutableStateOf(false) }
 
     // Same top band CarPlay keeps clear (status bar shown in "Plein écran + barre du haut").
