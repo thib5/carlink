@@ -67,6 +67,11 @@ class CarlinkSettings private constructor(
         get() = prefs.getInt(KEY_MARGIN_BOTTOM, 0).coerceIn(0, MAX_MARGIN)
         set(value) = prefs.edit { putInt(KEY_MARGIN_BOTTOM, value.coerceIn(0, MAX_MARGIN)) }
 
+    /** Width of the "Applications" side panel, in percent of the usable width. UI-only. */
+    var appsPanelWidthPercent: Int
+        get() = prefs.getInt(KEY_APPS_WIDTH, DEFAULT_APPS_WIDTH).coerceIn(MIN_APPS_WIDTH, MAX_APPS_WIDTH)
+        set(value) = prefs.edit { putInt(KEY_APPS_WIDTH, value.coerceIn(MIN_APPS_WIDTH, MAX_APPS_WIDTH)) }
+
     // ==================== Son ====================
 
     var audioOutput: AudioOutputSetting
@@ -120,12 +125,17 @@ class CarlinkSettings private constructor(
             marginRight = marginRightPercent,
             marginTop = marginTopPercent,
             marginBottom = marginBottomPercent,
+            appsPanelWidth = appsPanelWidthPercent,
         )
 
     /** Persist a full snapshot in one go. Returns true if anything changed. */
     fun apply(new: Snapshot): Boolean {
         val old = snapshot()
         if (old == new) return false
+        if (old.copy(appsPanelWidth = new.appsPanelWidth) == new) {
+            prefs.edit(commit = true) { putInt(KEY_APPS_WIDTH, new.appsPanelWidth.coerceIn(MIN_APPS_WIDTH, MAX_APPS_WIDTH)) }
+            return true
+        }
         prefs.edit(commit = true) {
             putInt(KEY_ZOOM, new.zoomPercent.coerceIn(MIN_ZOOM, MAX_ZOOM))
             putString(KEY_DISPLAY_MODE, new.displayMode.key)
@@ -139,6 +149,7 @@ class CarlinkSettings private constructor(
             putInt(KEY_MARGIN_RIGHT, new.marginRight.coerceIn(0, MAX_MARGIN))
             putInt(KEY_MARGIN_TOP, new.marginTop.coerceIn(0, MAX_MARGIN))
             putInt(KEY_MARGIN_BOTTOM, new.marginBottom.coerceIn(0, MAX_MARGIN))
+            putInt(KEY_APPS_WIDTH, new.appsPanelWidth.coerceIn(MIN_APPS_WIDTH, MAX_APPS_WIDTH))
             putBoolean(KEY_DIRTY, true)
         }
         return true
@@ -157,6 +168,7 @@ class CarlinkSettings private constructor(
         val marginRight: Int = 0,
         val marginTop: Int = 0,
         val marginBottom: Int = 0,
+        val appsPanelWidth: Int = DEFAULT_APPS_WIDTH,
     )
 
     companion object {
@@ -174,6 +186,7 @@ class CarlinkSettings private constructor(
         private const val KEY_MARGIN_RIGHT = "margin_right_percent"
         private const val KEY_MARGIN_TOP = "margin_top_percent"
         private const val KEY_MARGIN_BOTTOM = "margin_bottom_percent"
+        private const val KEY_APPS_WIDTH = "apps_panel_width_percent"
         private const val KEY_DIRTY = "adapter_config_dirty"
 
         const val MIN_ZOOM = 100
@@ -182,6 +195,10 @@ class CarlinkSettings private constructor(
 
         /** Zoom presets shown as big buttons (percent). */
         val ZOOM_PRESETS = listOf(100, 125, 150, 175, 200)
+
+        const val MIN_APPS_WIDTH = 30
+        const val MAX_APPS_WIDTH = 70
+        const val DEFAULT_APPS_WIDTH = 47
 
         /** Max edge margin per side (percent). */
         const val MAX_MARGIN = 15

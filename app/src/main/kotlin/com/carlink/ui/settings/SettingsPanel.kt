@@ -309,6 +309,33 @@ private fun DisplaySection(
         }
     }
 
+    SettingGroup(
+        title = "Panneau Applications",
+        hint = "Largeur du panneau ouvert par le bouton Applications de CarPlay.",
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                "Largeur",
+                modifier = Modifier.width(120.dp),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            StepButton("−", enabled = draft.appsPanelWidth > CarlinkSettings.MIN_APPS_WIDTH) {
+                onChange(draft.copy(appsPanelWidth = (draft.appsPanelWidth - 1).coerceAtLeast(CarlinkSettings.MIN_APPS_WIDTH)))
+            }
+            Text(
+                "${draft.appsPanelWidth} %",
+                modifier = Modifier.width(130.dp),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary,
+            )
+            StepButton("+", enabled = draft.appsPanelWidth < CarlinkSettings.MAX_APPS_WIDTH) {
+                onChange(draft.copy(appsPanelWidth = (draft.appsPanelWidth + 1).coerceAtMost(CarlinkSettings.MAX_APPS_WIDTH)))
+            }
+        }
+    }
+
     SettingGroup(title = "Fluidité de l'image") {
         PillRow(
             options = listOf(60 to "60 images/s (fluide)", 30 to "30 images/s (économie)"),
