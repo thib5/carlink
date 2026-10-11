@@ -477,6 +477,13 @@ class MainActivity : ComponentActivity() {
      * FULL init so the new config is pushed to the adapter.
      */
     private fun applySettings(new: CarlinkSettings.Snapshot) {
+        // UI-only change (Applications panel width): store it, no CarPlay session rebuild.
+        val old = settings.snapshot()
+        if (old != new && old.copy(appsPanelWidth = new.appsPanelWidth) == new) {
+            settings.apply(new)
+            logInfo("[SETTINGS] Apps panel width → ${new.appsPanelWidth}% (no rebuild)", tag = "MAIN")
+            return
+        }
         if (!settings.apply(new)) {
             logInfo("[SETTINGS] No change", tag = "MAIN")
             return
