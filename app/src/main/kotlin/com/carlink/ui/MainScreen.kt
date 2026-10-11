@@ -125,13 +125,18 @@ fun MainScreen(
     var showHostUi by remember(carlinkManager) { mutableStateOf(false) }
     // Réglages panel (full-screen, above everything).
     var showSettings by remember { mutableStateOf(false) }
+    // CarPlay "Applications" button → side panel with the custom apps (over the live video).
+    var showApps by remember(carlinkManager) { mutableStateOf(false) }
     val surfaceState = rememberVideoSurfaceState()
 
     LaunchedEffect(connectionState) {
         logInfo("[UI_STATE] MainScreen connection state: $connectionState", tag = "UI")
         // The host-UI overlay only makes sense over a live session; reset it otherwise so the
         // idle dashboard shows normally.
-        if (connectionState != CarlinkManager.State.STREAMING) showHostUi = false
+        if (connectionState != CarlinkManager.State.STREAMING) {
+            showHostUi = false
+            showApps = false
+        }
     }
 
     // Forward the AAOS day/night state to CarPlay. Fires when a session reaches STREAMING (initial
@@ -184,8 +189,9 @@ fun MainScreen(
                             // OEM "Exit" icon pressed in CarPlay → overlay the dashboard cards on
                             // the live video. The CarPlay session keeps running; dismissing returns
                             // to projection (and flushes the codec so video resumes cleanly).
-                            logInfo("[UI_NAV] Host UI requested — overlaying dashboard", tag = "UI")
-                            showHostUi = true
+                            // "Applications" button → apps side panel; tapping it again closes it.
+                            logInfo("[UI_NAV] Host UI requested — toggling apps panel", tag = "UI")
+                            showApps = !showApps
                         }
 
                         override fun onPhoneTypeChanged(phoneType: PhoneType) {
@@ -340,6 +346,17 @@ fun MainScreen(
                             null
                         },
                 )
+            }
+            // Custom apps side panel (CarPlay stays live and touchable beside it).
+            if (showApps && !isLoading && !showHostUi) {
+                AppsPanel(
+                    onClose = { showApps = false },
+                    onOpenSettings = {
+                        showApps = false
+                        showHostUi = true
+                    },
+                )
+                BackHandler(enabled = !showSettings) { showApps = false }
             }
             // System back dismisses the host-UI overlay and returns to projection.
             BackHandler(enabled = overlayingSession && !showSettings) {
