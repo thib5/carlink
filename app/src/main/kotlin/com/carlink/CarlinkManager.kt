@@ -1383,6 +1383,7 @@ class CarlinkManager(
                 mediaSessionManager?.setInactive()
                 // Clear now-playing and stop foreground service
                 CarlinkMediaBrowserService.clearNowPlaying()
+                com.carlink.ui.NowPlayingStore.clear()
                 CarlinkMediaBrowserService.stopConnectionForeground(context)
                 // Release wake lock - CPU can sleep now
                 releaseWakeLock()
@@ -2245,6 +2246,16 @@ class CarlinkManager(
                 position = position,
                 isPlaying = isPlaying,
             )
+
+        // Feed the in-app apps (lyrics sync, music quiz).
+        com.carlink.ui.NowPlayingStore.update(
+            title = mediaInfo.songTitle,
+            artist = mediaInfo.songArtist,
+            album = mediaInfo.albumName,
+            durationMs = duration,
+            positionMs = position,
+            isPlaying = isPlaying,
+        )
 
         // WHY this broader predicate: AA's incremental metadata stream would
         // otherwise suppress legitimate artist/album/appName/duration-only
