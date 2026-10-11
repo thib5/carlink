@@ -311,7 +311,7 @@ object MessageSerializer {
         return "oemIconVisible = $visible\nname = AutoBox\n" +
             "model = Magic-Car-Link-1.00\n" +
             "oemIconPath = $iconPath\n" +
-            "oemIconLabel = Controls\n"
+            "oemIconLabel = Applications\n"
     }
 
     // ==================== Initialization Sequence ====================
