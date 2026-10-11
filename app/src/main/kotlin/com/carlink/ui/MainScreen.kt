@@ -350,6 +350,7 @@ fun MainScreen(
             // Custom apps side panel (CarPlay stays live and touchable beside it).
             if (showApps && !isLoading && !showHostUi) {
                 AppsPanel(
+                    carlinkManager = carlinkManager,
                     onClose = { showApps = false },
                     onOpenSettings = {
                         showApps = false
