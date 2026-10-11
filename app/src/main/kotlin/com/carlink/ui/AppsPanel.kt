@@ -136,8 +136,9 @@ fun AppsPanel(
                 (usable * (settings.appsPanelWidthPercent / 100f)).coerceAtLeast(520.dp).coerceAtMost(usable)
             }
         val width by animateDpAsState(target, label = "panelWidth")
-        // The bottom-right of the GM screen is cut on a diagonal: big matching corner + inset.
-        val shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp, bottomStart = 30.dp, bottomEnd = 110.dp)
+        // The GM screen's right edge is slanted and both right corners are cut: big matching
+        // corners + a wide inner inset on the right so nothing lands under the curve.
+        val shape = RoundedCornerShape(topStart = 30.dp, topEnd = 120.dp, bottomStart = 30.dp, bottomEnd = 120.dp)
 
         Row(
             modifier =
@@ -149,7 +150,7 @@ fun AppsPanel(
                     .appGlass(shape = shape, alpha = if (current == CarApp.QUIZ) 1f else 0.94f)
                     // Swallow taps on empty panel areas so they don't fall through to CarPlay.
                     .pointerInput(Unit) { detectTapGestures { } }
-                    .padding(start = 14.dp, end = 34.dp, top = 14.dp, bottom = 26.dp),
+                    .padding(start = 14.dp, end = 76.dp, top = 14.dp, bottom = 26.dp),
         ) {
             Rail(
                 current = current,
@@ -251,7 +252,7 @@ private fun Launcher(
     onOpenSettings: () -> Unit,
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(150.dp),
+        columns = GridCells.Fixed(3),
         modifier = Modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
