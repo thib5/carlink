@@ -1031,7 +1031,19 @@ class CarlinkManager(
 
     /** Skip to the next track on the phone (used by the in-app music quiz). */
     fun nextTrack() {
-        scope.launch(Dispatchers.IO) { sendKey(CommandMapping.NEXT) }
+        if (mediaSessionManager != null) {
+            // Adapter audio: the phone's media stream comes through the adapter.
+            scope.launch(Dispatchers.IO) { sendKey(CommandMapping.NEXT) }
+        } else {
+            // Bluetooth audio: the car's own Bluetooth player owns the music session, and
+            // the adapter key is ignored there. Send a system media key instead, the car
+            // forwards it to the phone over AVRCP.
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager ?: return
+            val now = android.os.SystemClock.uptimeMillis()
+            val code = android.view.KeyEvent.KEYCODE_MEDIA_NEXT
+            am.dispatchMediaKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, code, 0))
+            am.dispatchMediaKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, code, 0))
+        }
     }
 
     /**
