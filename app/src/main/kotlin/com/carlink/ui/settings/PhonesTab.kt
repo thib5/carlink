@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -195,8 +196,10 @@ fun PhonesTabContent(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             cards.chunked(columns).forEach { rowCards ->
+                // Narrower than the panel: the GM screen's slanted right edge eats the last
+                // part of each row, so keep the cards clear of it.
                 Row(
-                    modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                    modifier = Modifier.fillMaxWidth(0.8f).widthIn(max = 600.dp).height(IntrinsicSize.Max),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     rowCards.forEach { card -> card(Modifier.weight(1f).fillMaxHeight()) }
