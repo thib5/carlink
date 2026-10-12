@@ -118,7 +118,7 @@ private suspend fun fetchDetails(np: NowPlaying): SongDetails? {
 private val FR_DATE = DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.CANADA_FRENCH)
 
 @Composable
-fun QuizApp() {
+fun QuizApp(onNext: () -> Unit = {}) {
     val np by NowPlayingStore.state.collectAsState()
     var revealed by remember { mutableStateOf(false) }
     var details by remember { mutableStateOf<SongDetails?>(null) }
@@ -169,19 +169,26 @@ fun QuizApp() {
             }
         }
 
-        if (revealed && !scored) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                ScoreButton("Je l'avais !", AppColors.Green, Modifier.weight(1f)) {
+        // After the reveal: score it and jump straight to the next song. "Passer" skips without
+        // scoring (also available before the reveal for a song nobody wants to guess).
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            if (revealed && !scored) {
+                ScoreButton("Je l'avais  ⏭", AppColors.Green, Modifier.weight(1f)) {
                     found++
                     scored = true
+                    onNext()
                 }
-                ScoreButton("Raté", AppColors.Pink, Modifier.weight(1f)) {
+                ScoreButton("Raté  ⏭", AppColors.Pink, Modifier.weight(1f)) {
                     missed++
                     scored = true
+                    onNext()
                 }
+            }
+            ScoreButton("Passer  ⏭", AppColors.Accent, Modifier.weight(if (revealed && !scored) 0.8f else 1f)) {
+                onNext()
             }
         }
     }

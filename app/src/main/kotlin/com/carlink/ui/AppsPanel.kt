@@ -1,5 +1,6 @@
 package com.carlink.ui
 
+import android.content.Context
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateDpAsState
@@ -34,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloseFullscreen
 import androidx.compose.material.icons.filled.Lyrics
@@ -81,6 +83,23 @@ enum class CarApp(
     QUIZ("Quiz musical", Icons.Default.Quiz, listOf(Color(0xFFB57BFF), Color(0xFF6E44FF))),
     WEATHER("Météo", Icons.Default.WbSunny, listOf(Color(0xFF5AC8FA), Color(0xFF007AFF))),
     DEVICES("Appareils", Icons.Default.PhoneIphone, listOf(Color(0xFF6EE7A0), Color(0xFF28B463))),
+    DRAW("Dessin", Icons.Default.Palette, listOf(Color(0xFFFFB347), Color(0xFFFF6B3D))),
+}
+
+/** Which apps (and the menu, as "MENU") the user wants full screen. Kept across reboots. */
+private object FullScreenPrefs {
+    private const val KEY = "fullscreen"
+
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("carlink_apps", Context.MODE_PRIVATE)
+
+    fun load(ctx: Context): Set<String> = prefs(ctx).getStringSet(KEY, emptySet())?.toSet() ?: emptySet()
+
+    fun save(
+        ctx: Context,
+        set: Set<String>,
+    ) {
+        prefs(ctx).edit().putStringSet(KEY, set).apply()
+    }
 }
 
 /** Last app shown + when the panel closed (process memory; a reboot just shows the menu). */
@@ -120,7 +139,13 @@ fun AppsPanel(
     DisposableEffect(Unit) {
         onDispose { PanelMemory.remember(latestApp) }
     }
-    var expanded by rememberSaveable { mutableStateOf(false) }
+    var fullScreen by remember { mutableStateOf(FullScreenPrefs.load(ctx)) }
+    val key = current?.name ?: "MENU"
+    val expanded = key in fullScreen
+    val toggleFullScreen = {
+        fullScreen = if (expanded) fullScreen - key else fullScreen + key
+        FullScreenPrefs.save(ctx, fullScreen)
+    }
 
     // Same top band CarPlay keeps clear (status bar shown in "Plein écran + barre du haut").
     BoxWithConstraints(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars)) {
@@ -150,10 +175,12 @@ fun AppsPanel(
                     .appGlass(shape = shape, alpha = if (current == CarApp.QUIZ) 1f else 0.94f)
                     // Swallow taps on empty panel areas so they don't fall through to CarPlay.
                     .pointerInput(Unit) { detectTapGestures { } }
-                    .padding(start = 14.dp, end = 76.dp, top = 14.dp, bottom = 26.dp),
+                    .padding(start = 14.dp, end = 76.dp, top = 14.dp, bottom = 40.dp),
         ) {
             Rail(
                 current = current,
+                expanded = expanded,
+                onToggleFullScreen = toggleFullScreen,
                 onHome = { current = null },
                 onOpen = { current = it },
                 onSettings = onOpenSettings,
@@ -161,23 +188,14 @@ fun AppsPanel(
             )
             Spacer(Modifier.width(18.dp))
             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        current?.label ?: "Applications",
-                        color = AppColors.Text,
-                        fontSize = 30.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    AppRoundButton(
-                        if (expanded) Icons.Default.CloseFullscreen else Icons.Default.OpenInFull,
-                        if (expanded) "Réduire" else "Agrandir",
-                        { expanded = !expanded },
-                        size = 60,
-                    )
-                }
+                Text(
+                    current?.label ?: "Applications",
+                    color = AppColors.Text,
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Box(modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 10.dp)) {
                     AnimatedContent(
                         targetState = current,
@@ -187,9 +205,10 @@ fun AppsPanel(
                         when (app) {
                             null -> Launcher(onOpen = { current = it }, onOpenSettings = onOpenSettings)
                             CarApp.LYRICS -> LyricsApp()
-                            CarApp.QUIZ -> QuizApp()
+                            CarApp.QUIZ -> QuizApp(onNext = { carlinkManager.nextTrack() })
                             CarApp.WEATHER -> WeatherApp()
                             CarApp.DEVICES -> DevicesApp(carlinkManager)
+                            CarApp.DRAW -> DrawApp()
                         }
                     }
                 }
@@ -202,6 +221,8 @@ fun AppsPanel(
 @Composable
 private fun Rail(
     current: CarApp?,
+    expanded: Boolean,
+    onToggleFullScreen: () -> Unit,
     onHome: () -> Unit,
     onOpen: (CarApp) -> Unit,
     onSettings: () -> Unit,
@@ -218,6 +239,12 @@ private fun Rail(
         }
         RailButton(Icons.Default.Settings, "Réglages", SettingsColors, selected = false, onClick = onSettings)
         Spacer(Modifier.height(6.dp))
+        AppRoundButton(
+            if (expanded) Icons.Default.CloseFullscreen else Icons.Default.OpenInFull,
+            if (expanded) "Réduire" else "Plein écran",
+            onToggleFullScreen,
+            size = 56,
+        )
         AppRoundButton(Icons.Default.Close, "Fermer", onClose, size = 56)
     }
 }
@@ -252,9 +279,11 @@ private fun Launcher(
     onOpenSettings: () -> Unit,
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
+        // Fixed-size cells packed from the left, next to the rail (no big gap on the left,
+        // spare room ends up on the right, away from the slanted screen edge).
+        columns = GridCells.FixedSize(150.dp),
         modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.Start),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         items(CarApp.entries) { app ->
@@ -319,7 +348,7 @@ private fun DevicesApp(carlinkManager: CarlinkManager) {
                 modifier = Modifier.padding(bottom = 12.dp),
             )
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                PhonesTabContent(carlinkManager)
+                PhonesTabContent(carlinkManager, columns = 2)
             }
         }
     }
