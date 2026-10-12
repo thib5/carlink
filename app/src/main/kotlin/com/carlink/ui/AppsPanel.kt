@@ -204,7 +204,7 @@ fun AppsPanel(
                     ) { app ->
                         when (app) {
                             null -> Launcher(onOpen = { current = it }, onOpenSettings = onOpenSettings)
-                            CarApp.LYRICS -> LyricsApp()
+                            CarApp.LYRICS -> LyricsApp(big = expanded)
                             CarApp.QUIZ -> QuizApp(onNext = { carlinkManager.nextTrack() })
                             CarApp.WEATHER -> WeatherApp()
                             CarApp.DEVICES -> DevicesApp(carlinkManager)

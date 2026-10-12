@@ -119,8 +119,10 @@ private suspend fun fetchLyrics(np: NowPlaying): LyricsResult {
 private suspend fun probeOffline(): LyricsResult =
     if (AppNet.get("https://lrclib.net/api/search?q=test") == null) LyricsResult.Offline else LyricsResult.NotFound
 
+/** [big] = full-screen panel: much larger lyrics, readable at a glance. */
 @Composable
-fun LyricsApp() {
+fun LyricsApp(big: Boolean = false) {
+    val k = if (big) 1.5f else 1f
     val np by NowPlayingStore.state.collectAsState()
     var result by remember { mutableStateOf<LyricsResult>(LyricsResult.Loading) }
     var offsetMs by remember { mutableLongStateOf(0L) }
@@ -161,8 +163,8 @@ fun LyricsApp() {
                 LyricsResult.NotFound -> AppMessage(Icons.Default.Lyrics, "Paroles introuvables", "Pas de paroles pour cette chanson.")
                 LyricsResult.Offline -> AppMessage(Icons.Default.CloudOff, "Pas d'internet", "L'auto n'a pas accès à internet en ce moment.")
                 LyricsResult.Instrumental -> AppMessage(Icons.Default.Lyrics, "Instrumental", "Cette chanson n'a pas de paroles.")
-                is LyricsResult.Plain -> PlainLyrics(r.text)
-                is LyricsResult.Synced -> SyncedLyrics(r.lines, np, offsetMs)
+                is LyricsResult.Plain -> PlainLyrics(r.text, k)
+                is LyricsResult.Synced -> SyncedLyrics(r.lines, np, offsetMs, k)
             }
         }
         if (result is LyricsResult.Synced) {
@@ -189,6 +191,7 @@ private fun SyncedLyrics(
     lines: List<LyricLine>,
     np: NowPlaying,
     offsetMs: Long,
+    k: Float,
 ) {
     val now = rememberTicker(200L)
     val pos = np.livePositionMs(now) + offsetMs
@@ -202,7 +205,7 @@ private fun SyncedLyrics(
         state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy((14 * k).dp),
     ) {
         itemsIndexed(lines) { i, line ->
             val active = i == current
@@ -217,8 +220,8 @@ private fun SyncedLyrics(
             Text(
                 text = line.text.ifBlank { "♪" },
                 color = color,
-                fontSize = if (active) 34.sp else 27.sp,
-                lineHeight = if (active) 40.sp else 33.sp,
+                fontSize = (if (active) 34f else 27f).times(k).sp,
+                lineHeight = (if (active) 40f else 33f).times(k).sp,
                 fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             )
@@ -227,7 +230,10 @@ private fun SyncedLyrics(
 }
 
 @Composable
-private fun PlainLyrics(text: String) {
+private fun PlainLyrics(
+    text: String,
+    k: Float,
+) {
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp)) {
         Text(
             "Paroles non synchronisées",
@@ -238,8 +244,8 @@ private fun PlainLyrics(text: String) {
         Text(
             text,
             color = AppColors.Text,
-            fontSize = 25.sp,
-            lineHeight = 34.sp,
+            fontSize = (25 * k).sp,
+            lineHeight = (34 * k).sp,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Start,
         )

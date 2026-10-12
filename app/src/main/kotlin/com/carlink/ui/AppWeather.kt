@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -294,116 +293,90 @@ private fun ForecastView(
     f: Forecast,
     onRefresh: () -> Unit,
 ) {
-    // Wide panel (full screen): current + hours on the left, the week on the right.
-    androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        if (maxWidth >= 820.dp) {
-            Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Column(modifier = Modifier.weight(1.15f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                    NowBlock(f, onRefresh)
-                    HoursBlock(f)
-                }
-                Column(modifier = Modifier.weight(0.85f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                    DaysBlock(f)
-                }
-            }
-        } else {
-            Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                NowBlock(f, onRefresh)
-                HoursBlock(f)
-                Spacer(Modifier.height(14.dp))
-                DaysBlock(f)
-            }
-        }
-    }
-}
-
-@Composable
-private fun NowBlock(
-    f: Forecast,
-    onRefresh: () -> Unit,
-) {
     val (label, icon) = wmo(f.code, f.isDay)
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Icon(Icons.Default.LocationOn, contentDescription = null, tint = AppColors.Secondary, modifier = Modifier.size(24.dp))
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.LocationOn, contentDescription = null, tint = AppColors.Secondary, modifier = Modifier.size(24.dp))
+            Text(
+                f.place ?: "Ici",
+                color = AppColors.Secondary,
+                fontSize = 21.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(start = 6.dp),
+            )
+            AppRoundButton(Icons.Default.Refresh, "Actualiser", onRefresh, size = 56)
+        }
+
+        // Now
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+            Icon(icon, contentDescription = null, tint = if (f.isDay) AppColors.Orange else AppColors.Accent, modifier = Modifier.size(96.dp))
+            Spacer(Modifier.width(16.dp))
+            Column {
+                Text(f.temp.deg(), color = AppColors.Text, fontSize = 76.sp, fontWeight = FontWeight.Light, lineHeight = 80.sp)
+                Text(label, color = AppColors.Text, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.padding(bottom = 16.dp)) {
+            Stat(Icons.Default.WbSunny, "Ressenti ${f.feels.deg()}")
+            Stat(Icons.Default.Air, "${f.wind.roundToInt()} km/h")
+            Stat(Icons.Default.WaterDrop, "${f.humidity} %")
+        }
+
+        // Next hours
+        LazyRow(
+            modifier = Modifier.fillMaxWidth().appTile().padding(vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            items(f.hours) { h ->
+                val (_, hi) = wmo(h.code, h.isDay)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(78.dp)) {
+                    Text("${h.time.hour} h", color = AppColors.Secondary, fontSize = 17.sp)
+                    Icon(hi, contentDescription = null, tint = AppColors.Text, modifier = Modifier.padding(vertical = 6.dp).size(30.dp))
+                    Text(h.temp.deg(), color = AppColors.Text, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (h.precipProb >= 10) "${h.precipProb} %" else " ",
+                        color = AppColors.Accent,
+                        fontSize = 15.sp,
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+
+        // Next days
+        Column(modifier = Modifier.fillMaxWidth().appTile().padding(horizontal = 18.dp, vertical = 8.dp)) {
+            f.days.forEachIndexed { i, d ->
+                val (_, di) = wmo(d.code)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                    Text(
+                        if (i == 0) "Auj." else d.date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.CANADA_FRENCH).replaceFirstChar { it.uppercase() },
+                        color = AppColors.Text,
+                        fontSize = 21.sp,
+                        modifier = Modifier.width(80.dp),
+                    )
+                    Icon(di, contentDescription = null, tint = AppColors.Text, modifier = Modifier.size(28.dp))
+                    Text(
+                        if (d.precipProb >= 10) "${d.precipProb} %" else "",
+                        color = AppColors.Accent,
+                        fontSize = 16.sp,
+                        modifier = Modifier.width(70.dp).padding(start = 10.dp),
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(d.min.deg(), color = AppColors.Secondary, fontSize = 21.sp)
+                    Text("  /  ", color = AppColors.Faint, fontSize = 21.sp)
+                    Text(d.max.deg(), color = AppColors.Text, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
         Text(
-            f.place ?: "Ici",
-            color = AppColors.Secondary,
-            fontSize = 21.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).padding(start = 6.dp),
+            "Données : Open-Meteo",
+            color = AppColors.Faint,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(top = 10.dp),
         )
-        AppRoundButton(Icons.Default.Refresh, "Actualiser", onRefresh, size = 56)
     }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
-        Icon(icon, contentDescription = null, tint = if (f.isDay) AppColors.Orange else AppColors.Accent, modifier = Modifier.size(96.dp))
-        Spacer(Modifier.width(16.dp))
-        Column {
-            Text(f.temp.deg(), color = AppColors.Text, fontSize = 76.sp, fontWeight = FontWeight.Light, lineHeight = 80.sp)
-            Text(label, color = AppColors.Text, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
-        }
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.padding(bottom = 16.dp)) {
-        Stat(Icons.Default.WbSunny, "Ressenti ${f.feels.deg()}")
-        Stat(Icons.Default.Air, "${f.wind.roundToInt()} km/h")
-        Stat(Icons.Default.WaterDrop, "${f.humidity} %")
-    }
-}
-
-@Composable
-private fun HoursBlock(f: Forecast) {
-    LazyRow(
-        modifier = Modifier.fillMaxWidth().appTile().padding(vertical = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        items(f.hours) { h ->
-            val (_, hi) = wmo(h.code, h.isDay)
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(78.dp)) {
-                Text("${h.time.hour} h", color = AppColors.Secondary, fontSize = 17.sp)
-                Icon(hi, contentDescription = null, tint = AppColors.Text, modifier = Modifier.padding(vertical = 6.dp).size(30.dp))
-                Text(h.temp.deg(), color = AppColors.Text, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Text(
-                    if (h.precipProb >= 10) "${h.precipProb} %" else " ",
-                    color = AppColors.Accent,
-                    fontSize = 15.sp,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DaysBlock(f: Forecast) {
-    Column(modifier = Modifier.fillMaxWidth().appTile().padding(horizontal = 18.dp, vertical = 8.dp)) {
-        f.days.forEachIndexed { i, d ->
-            val (_, di) = wmo(d.code)
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                Text(
-                    if (i == 0) "Auj." else d.date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.CANADA_FRENCH).replaceFirstChar { it.uppercase() },
-                    color = AppColors.Text,
-                    fontSize = 21.sp,
-                    modifier = Modifier.width(80.dp),
-                )
-                Icon(di, contentDescription = null, tint = AppColors.Text, modifier = Modifier.size(28.dp))
-                Text(
-                    if (d.precipProb >= 10) "${d.precipProb} %" else "",
-                    color = AppColors.Accent,
-                    fontSize = 16.sp,
-                    modifier = Modifier.width(70.dp).padding(start = 10.dp),
-                )
-                Spacer(Modifier.weight(1f))
-                Text(d.min.deg(), color = AppColors.Secondary, fontSize = 21.sp)
-                Text("  /  ", color = AppColors.Faint, fontSize = 21.sp)
-                Text(d.max.deg(), color = AppColors.Text, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-            }
-        }
-    }
-    Text(
-        "Données : Open-Meteo",
-        color = AppColors.Faint,
-        fontSize = 13.sp,
-        modifier = Modifier.padding(top = 10.dp, bottom = 24.dp),
-    )
 }
 
 @Composable
