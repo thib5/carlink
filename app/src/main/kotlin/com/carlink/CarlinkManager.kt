@@ -1029,6 +1029,11 @@ class CarlinkManager(
      */
     private fun sendKey(command: CommandMapping): Boolean = adapterDriver?.sendCommand(command) ?: false
 
+    /** Skip to the next track on the phone (used by the in-app music quiz). */
+    fun nextTrack() {
+        scope.launch(Dispatchers.IO) { sendKey(CommandMapping.NEXT) }
+    }
+
     /**
      * Send a multi-touch event (CarPlay — type 0x17, 0..1 floats).
      * Dispatched to IO — USB bulkTransfer must never block the UI thread.
