@@ -7,6 +7,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -77,7 +78,10 @@ private const val PROCESSING_TIMEOUT_MS = 10_000L
  * - Wireless device cards: queried from adapter's DevList with Connect/Disconnect/Remove actions.
  */
 @Composable
-fun PhonesTabContent(carlinkManager: CarlinkManager) {
+fun PhonesTabContent(
+    carlinkManager: CarlinkManager,
+    columns: Int = 0,
+) {
     val view = LocalView.current
 
     // Observe device list and connection state
@@ -131,68 +135,91 @@ fun PhonesTabContent(carlinkManager: CarlinkManager) {
     // Hoisted remove dialog state to prevent stale device references across recompositions.
     var deviceToRemove by remember { mutableStateOf<CarlinkManager.DeviceInfo?>(null) }
 
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        // Row wraps its content (no fillMaxWidth) so the Box can center it both axes; when the
-        // cards overflow the card width, horizontalScroll lets the list scroll.
-        Row(
-            modifier =
-                Modifier
-                    .height(IntrinsicSize.Max)
-                    .horizontalScroll(rememberScrollState())
-                    .padding(24.dp),
-            horizontalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
-            // === USB Device Card (always present) ===
-            // wifi=0 means explicit USB; wifi=-1 (null) with active phoneType means
-            // the adapter didn't send the wifi field — treat as USB since wireless
-            // always sends wifi=1 explicitly. (connectedBtMac is private backing with a
-            // public read-only accessor on CarlinkManager; activeWifi mirrors currentWifi.)
-            val isUsbConnected = phoneType != null && activeWifi != 1
-            UsbDeviceCard(
-                isConnected = isUsbConnected,
-                phoneType = if (isUsbConnected) phoneType else null,
-                modifier = Modifier.width(CARD_WIDTH).fillMaxHeight(),
-            )
+    // Cards as (modifier) -> card, so they can be laid out in one scrolling row (dashboard) or a
+    // vertical grid of [columns] (Applications panel).
+    val isUsbConnected = phoneType != null && activeWifi != 1
+    val cards = ArrayList<@Composable (Modifier) -> Unit>()
+    // === USB Device Card (always present) ===
+    // wifi=0 means explicit USB; wifi=-1 (null) with active phoneType means the adapter didn't
+    // send the wifi field — treat as USB since wireless always sends wifi=1 explicitly.
+    cards += { m ->
+        UsbDeviceCard(
+            isConnected = isUsbConnected,
+            phoneType = if (isUsbConnected) phoneType else null,
+            modifier = m,
+        )
+    }
+    // === Wireless Device Cards ===
+    if (pairedDevices.isEmpty()) {
+        cards += { m -> EmptyDeviceCard(modifier = m) }
+    } else {
+        pairedDevices.forEach { device ->
+            cards += { m ->
+                // Stable keying by btMac preserves per-card state across list reorderings.
+                key(device.btMac) {
+                    val isDeviceActive =
+                        activeWifi == 1 &&
+                            activeBtMac != null &&
+                            device.btMac == activeBtMac &&
+                            (
+                                managerState == CarlinkManager.State.STREAMING ||
+                                    managerState == CarlinkManager.State.DEVICE_CONNECTED
+                            )
 
-            // === Wireless Device Cards ===
-            if (pairedDevices.isEmpty()) {
-                EmptyDeviceCard(modifier = Modifier.width(CARD_WIDTH).fillMaxHeight())
-            } else {
-                pairedDevices.forEach { device ->
-                    // Stable keying by btMac preserves per-card state across list reorderings.
-                    key(device.btMac) {
-                        val isDeviceActive =
-                            activeWifi == 1 &&
-                                activeBtMac != null &&
-                                device.btMac == activeBtMac &&
-                                (
-                                    managerState == CarlinkManager.State.STREAMING ||
-                                        managerState == CarlinkManager.State.DEVICE_CONNECTED
-                                )
-
-                        WirelessDeviceCard(
-                            device = device,
-                            isConnected = isDeviceActive,
-                            onTap = {
-                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                isProcessing = true
-                                if (isDeviceActive) {
-                                    carlinkManager.disconnectPhone()
-                                } else {
-                                    carlinkManager.connectToDevice(device.btMac)
-                                }
-                            },
-                            onRemove = {
-                                deviceToRemove = device
-                            },
-                            modifier = Modifier.width(CARD_WIDTH).fillMaxHeight(),
-                            enabled = !isProcessing,
-                        )
-                    }
+                    WirelessDeviceCard(
+                        device = device,
+                        isConnected = isDeviceActive,
+                        onTap = {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            isProcessing = true
+                            if (isDeviceActive) {
+                                carlinkManager.disconnectPhone()
+                            } else {
+                                carlinkManager.connectToDevice(device.btMac)
+                            }
+                        },
+                        onRemove = {
+                            deviceToRemove = device
+                        },
+                        modifier = m,
+                        enabled = !isProcessing,
+                    )
                 }
+            }
+        }
+    }
+
+    if (columns > 0) {
+        Column(
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            cards.chunked(columns).forEach { rowCards ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    rowCards.forEach { card -> card(Modifier.weight(1f).fillMaxHeight()) }
+                    repeat(columns - rowCards.size) { Spacer(modifier = Modifier.weight(1f)) }
+                }
+            }
+        }
+    } else {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            // Row wraps its content (no fillMaxWidth) so the Box can center it both axes; when the
+            // cards overflow the card width, horizontalScroll lets the list scroll.
+            Row(
+                modifier =
+                    Modifier
+                        .height(IntrinsicSize.Max)
+                        .horizontalScroll(rememberScrollState())
+                        .padding(24.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                cards.forEach { card -> card(Modifier.width(CARD_WIDTH).fillMaxHeight()) }
             }
         }
     }
