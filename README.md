@@ -1,71 +1,115 @@
-# Carlink — Personal (CarPlay-only)
+# EquinoxCP2 — CarPlay + apps custom pour Chevrolet Equinox EV
 
-A personal, stripped-down build of [Carlink](https://github.com/lvalen91/carlink_flutter) for **my own use** on a GM **gminfo3.7** head unit. CarPlay only. Shared with no expectation of support — fork it and make it yours.
+App Android Automotive (AAOS) personnelle de Dom pour sa **Chevrolet Equinox EV** (head unit GM gminfo, Android 12L / API 32+). Elle affiche **Apple CarPlay** sur l'écran de l'auto via l'adaptateur **Carlinkit CPC200-CCPA**. Par-dessus CarPlay, elle ajoute un panneau **« Applications »** avec des apps maison qu'on ne peut pas avoir dans CarPlay.
 
-This is the **`cp-stripped`** branch/variant of the main Carlink Android app. It is a **drop-in** of the same package (`zeno.carlink`): it installs over the main app and reuses the same protocol/media engine. The difference is everything *around* the engine — the UI is rebuilt and a lot of features the main app carries for everyone else are removed here.
+Fork personnel de Carlink. CarPlay seulement, pas d'Android Auto.
 
-> [!IMPORTANT]
-> Target platform is my **2024 Silverado gminfo3.7** (Intel, AAOS 12L / API 32) with a **Carlinkit CPC200-CCPA** on firmware 2025.10. That is the only hardware this is built and tested against. Anything else is **untested** — treat it as such.
+| | |
+|---|---|
+| Package | `com.thib5.carlink` |
+| Play Console | app **EquinoxCP2**, piste **Tests internes**, Android Automotive OS seulement |
+| Branche de travail | `claude/carlink-apk-fork-access-gwyx5e` (branche par défaut) |
+| minSdk / targetSdk | 32 / 36 |
+| UI | Kotlin + Jetpack Compose, style « glassmorphisme » à la Apple |
 
-## How this differs from the main Carlink
+Les autos GM de production sont verrouillées : pas d'ADB ni de sideload. **L'installation passe uniquement par Google Play** (piste de test interne).
 
-**Removed** (CarPlay-only focus):
-- Android Auto **projection** (CarPlay only; AA-paired devices still *list* in device management)
-- AAOS **Instrument Cluster** nav + **HUD** support, and the Car App Library / Templates host
-- The secondary **0x2C** cluster/nav video stream
-- **GPS / GNSS** forwarding to the phone
-- OEM **cluster icon** upload + the `play` store flavor (sideload-only now)
-- The in-app **adapter-config** and **display-mode** screens (immersive is hardcoded)
-- **Log-to-file** export (release logs are WARN/ERROR-only to logcat)
+---
 
-`minSdk` is raised to **32** (gminfo is Android 12L); the build is **sideload-only** (`sideloadDebug` / `sideloadRelease`).
+## Fonctionnement général
 
-**Kept / focused on:**
-- CarPlay projection (HWC overlay SurfaceView, low-latency)
-- Now-playing **metadata + album art** to the AAOS media surface
-- Device management (connect / disconnect / forget paired devices)
+1. Le Carlinkit est branché en USB sur l'auto. L'iPhone se connecte au Carlinkit (sans fil).
+2. L'app reçoit la vidéo H.264 de CarPlay et l'affiche dans une `SurfaceView` plein écran (overlay HWC, faible latence). Elle renvoie aussi le tactile multipoint.
+3. Le bouton OEM de CarPlay (icône bleue en bas à gauche de CarPlay) s'appelle **« Applications »**. Il ouvre le panneau d'apps custom **par-dessus CarPlay, qui reste en direct**.
+4. L'audio peut passer par l'adaptateur ou par le **Bluetooth** de l'auto. Dans les deux modes, l'adaptateur envoie quand même les métadonnées de la chanson en cours (titre, artiste, album, durée, position).
 
-## What's new here
+---
 
-- **Frosted Glass UI.** The idle/host-UI dashboard is a frosted-glass design (specular rim, sheen, translucent panels, large radii) that follows the **AAOS day/night theme** automatically.
-- **"Controls" host-UI button.** The CarPlay OEM/exit icon is labeled **Controls** and opens the dashboard *as a frosted overlay over the live session* — with a frozen, blurred snapshot of the CarPlay feed behind the cards (iOS-style), and a **Return to CarPlay** button to dismiss.
-- **CarPlay follows day/night.** When AAOS switches light/dark, the app sends the CarPlay night-mode command (16/17) mid-session, so CarPlay's own UI follows the head unit — without dropping the session.
+## Le panneau « Applications »
 
-## Screenshots
+Le panneau est collé à droite de l'écran. CarPlay reste utilisable à gauche, et les touches en dehors du panneau passent à CarPlay.
 
-The **Controls** dashboard — the host-UI overlay — as frosted glass over the live CarPlay feed, following the head unit's day/night theme:
+- **Suit la zone sûre de CarPlay** : sous la barre d'état AAOS si elle est visible, et à l'intérieur des marges réglées par l'utilisateur (gauche, droite, haut, bas, en %).
+- **L'écran GM a le bord droit en biais et les coins droits coupés.** Le panneau a donc de grands coins arrondis à droite (120 dp) et une grande marge intérieure à droite (76 dp). Le contenu ne doit jamais aller sous la courbe.
+- **Barre verticale à gauche du panneau, toujours visible** : Menu, chaque app, Réglages, Plein écran, Fermer.
+- **Plein écran par app** : le bouton ⤢ agrandit l'app courante (ou le menu) sur toute la largeur utile. Le choix est mémorisé **par app** dans `SharedPreferences("carlink_apps")`, clé `fullscreen`.
+- **Largeur réglable** : 30 % à 70 % de la largeur utile, 47 % par défaut, minimum 520 dp. Se règle dans *Réglages → Panneau Applications*. Changer seulement la largeur ne redémarre pas la session CarPlay.
+- **Réouverture intelligente** : si le panneau a été fermé il y a moins de 3 minutes, il rouvre la dernière app. Sinon, il ouvre le menu.
+- Le menu est une grille de tuiles de taille fixe collées à gauche, près de la barre, pour laisser l'espace libre loin du bord en biais.
 
-| Night | Day |
-| --- | --- |
-| ![Controls dashboard — night](/screenshots/dark_ctrl.png) | ![Controls dashboard — day](/screenshots/light_ctrl.png) |
+### Les apps
 
-CarPlay itself follows the AAOS day/night switch — the night-mode command is forwarded mid-session, session uninterrupted:
+| App | Fichier | Ce qu'elle fait |
+|---|---|---|
+| **Paroles** | `AppLyrics.kt` | Paroles synchronisées de la chanson en cours via **LRCLIB** (`lrclib.net`), avec la ligne active surlignée et défilement automatique. Boutons ± 0,5 s pour décaler. Paroles non synchronisées en repli. **Texte 1,5× plus gros en plein écran.** |
+| **Quiz musical** | `AppQuiz.kt` | Panneau opaque (cache le titre affiché par CarPlay). Bouton **Révélation** : titre, artiste, album et date de sortie via l'**API iTunes Search**. Pointage « Je l'avais » / « Raté », qui passe à la chanson suivante, plus un bouton « Passer ». |
+| **Météo** | `AppWeather.kt` | Prévisions via **Open-Meteo**, avec la position **GPS de l'auto** (permissions de localisation, `uses-feature` non requises). Maintenant, prochaines heures, prochains jours. |
+| **Appareils** | `ui/settings/PhonesTab.kt` (`columns = 2`) | Liste des téléphones connus de l'adaptateur, en 2 colonnes. Toucher un appareil bascule CarPlay dessus. Les cartes prennent 80 % de la largeur (600 dp max) pour éviter le bord en biais. |
+| **Dessin** | `AppDraw.kt` | Dessin au doigt : 7 couleurs, 3 grosseurs, annuler, tout effacer avec confirmation. **Le dessin est sauvegardé** dans `filesDir/drawing.json` (écriture dans un fichier temporaire, puis renommage). La prochaine personne qui ouvre l'app voit le dessin, avec « Dessiné le … ». |
+| **Réglages** | `ui/settings/SettingsPanel.kt` | Ouvre le tableau de bord de réglages de l'app. |
 
-| Night | Day |
-| --- | --- |
-| ![CarPlay home — night](/screenshots/dark_hs.png) | ![CarPlay home — day](/screenshots/light_hs.png) |
+Une app **Caméra** a été essayée puis retirée (v162) : GM n'expose pas les caméras de l'auto aux apps tierces. `AppCamera.kt` est un fichier vide gardé comme note.
 
-## Adapter firmware
+### Détails techniques utiles
 
-Unlike the main app, this variant does **not** ship or push the adapter-side patches. The iAP2 route-data restore existed for cluster navigation and the NMEA correction for Android Auto GPS forwarding — both removed here — so neither `ARMiPhoneIAP2.patched` nor `aa_gps_fix.sh` is included. It runs against **stock adapter firmware**. (If your CPC200-CCPA happens to be running custom firmware from the main project, that lives on the adapter and is independent of this app.)
+- **`NowPlayingStore`** (`AppSupport.kt`) : `StateFlow` alimenté par `CarlinkManager` à chaque message `MEDIA_DATA` de l'adaptateur (titre, artiste, album, durée, position, horodatage, lecture en cours). Il est vidé à la déconnexion. Les apps Paroles et Quiz s'en servent, et `livePositionMs()` extrapole la position entre deux messages.
+- **Chanson suivante** : `CarlinkManager.nextTrack()`.
+  - En audio par l'adaptateur, il envoie la commande `NEXT` (204) à l'adaptateur.
+  - En **audio Bluetooth**, cette commande est ignorée. L'app envoie plutôt une touche média système `KEYCODE_MEDIA_NEXT` via `AudioManager.dispatchMediaKeyEvent`, et l'auto la relaie au téléphone par AVRCP.
+- **`AppSupport.kt`** contient aussi les composants partagés : `AppNet` (HTTP simple), `Modifier.appGlass` / `appTile` (effet verre), `AppColors`, `AppRoundButton`, `AppMessage`, `rememberTicker`.
+- **Icônes** :
+  - Lanceur du menu Chevrolet : `mipmap/ic_launcher_plain`, une seule PNG transparente du logo bleu. Le lanceur GM affichait l'icône adaptative avec un cercle noir.
+  - Bouton OEM dans CarPlay : `res/raw/carlink_oem_icon.png`, envoyé à l'adaptateur sous `/etc/carlink_oem_<crc32>.png`, avec le libellé `oemIconLabel = Applications` (voir `MessageSerializer.kt`).
+- **Réglages utilisateur** : `SharedPreferences("carlink_user_settings")`, géré par `CarlinkSettings.kt`. Contient les marges en % (max 15) et `appsPanelWidthPercent`.
 
-## Build & install
+---
 
-```sh
-./gradlew :app:assembleSideloadDebug
-adb install -r -d app/build/outputs/apk/sideload/debug/app-sideload-debug.apk
+## Carte des fichiers
+
+```text
+app/src/main/kotlin/com/carlink/
+├── CarlinkManager.kt        # Session adaptateur : USB, protocole, vidéo, audio, médias, nextTrack()
+├── MainActivity.kt          # Activité unique, zone sûre + marges, application des réglages
+├── protocol/                # Protocole Carlinkit (MessageTypes, MessageSerializer, AdapterDriver)
+├── media/  audio/  usb/     # MediaSession/Media3, audio, accès USB
+└── ui/
+    ├── MainScreen.kt        # Écran principal : CarPlay + panneau Applications + réglages
+    ├── AppsPanel.kt         # Panneau Applications : barre, menu, plein écran, mémoire
+    ├── AppSupport.kt        # NowPlayingStore, réseau, styles verre, composants communs
+    ├── AppLyrics.kt         # Paroles (LRCLIB)
+    ├── AppQuiz.kt           # Quiz musical (iTunes Search)
+    ├── AppWeather.kt        # Météo (Open-Meteo + GPS)
+    ├── AppDraw.kt           # Dessin persistant
+    └── settings/
+        ├── CarlinkSettings.kt   # Réglages persistants
+        ├── SettingsPanel.kt     # Écran de réglages
+        └── PhonesTab.kt         # Cartes d'appareils (réglages + app Appareils)
 ```
 
-It installs over the main app (same `applicationId`); the version is bumped so a fresh init runs on first drop-in.
+---
 
-## Status
+## Compiler et publier
 
-Personal side project, changing whenever I feel like it. Optimized only for video/audio on gminfo3.7 — **that is the only focus.** Compatibility elsewhere is unverified. Issues/PRs welcome but unsupported.
+1. **CI** (`.github/workflows/build-aab.yml`) : chaque push sur la branche de travail qui touche `app/**`, les fichiers Gradle ou le workflow lance `:app:bundleSideloadRelease`. Le résultat est l'artefact **`carlink-unsigned-aab`**, un AAB non signé.
+2. **Signature** : l'AAB est signé **hors du repo** avec la clé d'upload Play (`jarsigner`, SHA256withRSA, certificat SHA-1 `63:2F:3C:…`). **La clé et ses mots de passe ne sont jamais dans le repo.** Seul `keystore.properties.example` y est.
+3. **Play Console** : on téléverse l'AAB signé sur la piste **Tests internes** d'EquinoxCP2, puis *Enregistrer et publier*. L'auto le reçoit par le Play Store en environ une heure.
+4. **Chaque version doit augmenter `versionCode`** dans `app/build.gradle.kts`.
 
-## Credits
+Pour compiler en local : `./gradlew :app:bundleSideloadRelease`. JDK 21 et Android SDK 36 ou plus sont nécessaires.
 
-Same lineage as the main app — these made it possible:
-- [Carplay by Abuharsky](https://github.com/abuharsky/carplay)
-- [Node-Carplay by Rhysmorgan134](https://github.com/rhysmorgan134/node-CarPlay)
-- [LIVI by f-io](https://github.com/f-io/LIVI)
-- [PyCarplay by Electric-Monk](https://github.com/electric-monk/pycarplay)
+---
+
+## Limites connues
+
+- Pas d'accès aux caméras de l'auto. GM ne les expose pas.
+- Le bord droit de l'écran est en biais. Toute nouvelle UI dans le panneau doit garder une marge à droite.
+- Les apps Paroles, Quiz et Météo ont besoin d'internet dans l'auto.
+- Projet personnel, testé seulement sur l'Equinox EV de Dom avec un CPC200-CCPA.
+
+## Crédits
+
+Basé sur Carlink et sa lignée :
+[Carplay](https://github.com/abuharsky/carplay) par Abuharsky ·
+[Node-Carplay](https://github.com/rhysmorgan134/node-CarPlay) par Rhysmorgan134 ·
+LIVI par f-io ·
+PyCarplay par Electric-Monk.
