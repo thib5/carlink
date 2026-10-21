@@ -301,7 +301,7 @@ object MessageSerializer {
 
     /**
      * Generate AirPlay configuration string.
-     * oemIconLabel is always "Controls" regardless of box settings (the CarPlay host-UI button
+     * oemIconLabel is always "Applications" regardless of box settings (the CarPlay host-UI button
      * opens the in-app controls dashboard).
      * Uses explicit \n (not raw multiline string)
      */
