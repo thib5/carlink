@@ -19,6 +19,8 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <!-- USB Host. required=false on purpose: the CPC200 adapter needs USB host at
          runtime, but GM AAOS (gm/gminfo37) does NOT advertise android.hardware.usb.host
@@ -93,6 +95,16 @@
                 android:name="distractionOptimized"
                 android:value="true" />
         </activity>
+
+        <!-- Opens the app when the car starts (see AutoStartReceiver). -->
+        <receiver
+            android:name=".AutoStartReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.USER_UNLOCKED" />
+            </intent-filter>
+        </receiver>
 
         <!-- App-grid entry. A new component name + new icon resource forces the car launcher,
              which kept showing the old cached icon even after reinstalling, to load the new one. -->
