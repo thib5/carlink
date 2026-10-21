@@ -239,6 +239,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        AutoStartReceiver.dismiss(this)
         // Re-assert the display mode — the system may have shown bars while backgrounded.
         applyDisplayMode(displayModeState.value)
     }
